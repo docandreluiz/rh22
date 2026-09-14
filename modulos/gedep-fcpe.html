@@ -67,6 +67,7 @@
                 <button id="btnGoogleLogout" onclick="gedepPilotoLogout()" class="hidden bg-slate-700 hover:bg-slate-600 px-3 py-1.5 rounded border border-slate-600 transition flex items-center space-x-1">
                     <i class="fa-solid fa-right-from-bracket text-xs"></i> <span>Sair</span>
                 </button>
+                <button id="btnGoogleExport" onclick="gedepPilotoExportarTudo()" class="hidden bg-emerald-700 hover:bg-emerald-600 px-3 py-1.5 rounded border border-emerald-600 transition flex items-center space-x-1"><i class="fa-solid fa-cloud-arrow-up text-xs"></i> Exportar FCPE</button>
                 <span id="googleSyncStatus" class="text-xs text-slate-300" aria-live="polite"></span>
             </div>
         </div>
@@ -535,6 +536,7 @@
                                         document.getElementById('btnGoogleLogin').classList.add('hidden');
                                         document.getElementById('btnGoogleSync').classList.remove('hidden');
                                         document.getElementById('btnGoogleLogout').classList.remove('hidden');
+                                        document.getElementById('btnGoogleExport').classList.remove('hidden');
                                         gedepPilotoStatus('Conectado: ' + gedepPilotoEmail);
                                     }).catch(function(err) { gedepPilotoStatus(err.message, true); });
                             }
@@ -546,69 +548,16 @@
             if (window.google && window.gapi) iniciar(); else setTimeout(iniciar, 1200);
         }
 
-        function gedepPilotoSincronizar() {
-            if (!gedepPilotoAccessToken) { gedepPilotoStatus('Faça login antes de buscar dados.', true); return; }
-            gedepPilotoStatus('Buscando servidores...');
-            gapi.client.sheets.spreadsheets.values.get({ spreadsheetId: GEDEP_PILOTO.spreadsheetId, range: GEDEP_PILOTO.range })
-                .then(function(response) {
-                    const values = response.result.values || [];
-                    if (!values.length) throw new Error('A aba servidores está vazia ou não foi encontrada.');
-                    const headers = values[0];
-                    const remote = values.slice(1).map(function(row) {
-                        const r = {}; headers.forEach(function(h, i) { r[h] = row[i] || ''; });
-                        return {
-                            id: r.id || ('remote_' + Math.random().toString(36).slice(2)), nome: r.nome || '', cpf: r.cpf || '',
-                            cargo: r.cargo || '', lotacao: r.lotacao || '', fcpeAtual: r.fcpeAtual || 'NENHUMA',
-                            areaAtual: r.areaAtual || '', statusMinuta: r.statusMinuta || 'Em elaboração',
-                            fotoFileId: r.fotoFileId || '', fotoUrl: r.fotoUrl || '', whatsappNumero: r.whatsappNumero || '', historico: []
-                        };
-                    }).filter(function(r) { return r.nome; });
-                    if (!confirm('Foram encontrados ' + remote.length + ' servidores. Substituir a lista local por essa cópia online?')) return;
-                    appData.servidores = remote;
-                    gedepStorage.setItem(STORAGE_KEY, JSON.stringify(appData));
-                    atualizarTudo();
-                    gedepPilotoStatus('Sincronizado: ' + remote.length + ' servidores.');
-                }).catch(function(err) { console.error(err); const detalhe = err && err.result && err.result.error ? (err.result.error.message || ('HTTP ' + err.result.error.code)) : (err.message || String(err)); gedepPilotoStatus('Sheets: ' + detalhe, true); console.error('Erro detalhado do Google Sheets:', err); });
+        function fcpeNorm(v){return String(v||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/[^a-z0-9]/g,'');}
+        function fcpeCampo(raw,names){for(const nome of names){const key=Object.keys(raw).find(k=>fcpeNorm(k)===fcpeNorm(nome));if(key&&String(raw[key]||'').trim())return raw[key];}return '';}
+        function fcpeId(s){return String(s.idServidor||s.id||'').trim();}
+        function gedepPilotoSincronizar(){
+            if(!gedepPilotoAccessToken){gedepPilotoStatus('Faça login antes de buscar dados.',true);return;}gedepPilotoStatus('Buscando servidores...');Promise.resolve(gapi.client.sheets.spreadsheets.values.get({spreadsheetId:GEDEP_PILOTO.spreadsheetId,range:'servidores!A:Z'})).then(function(response){const values=response.result.values||[];if(!values.length)throw new Error('A aba servidores está vazia ou não foi encontrada.');const headers=values[0];const remote=values.slice(1).map(function(row){const r={};headers.forEach(function(h,i){r[h]=row[i]||'';});const id=fcpeCampo(r,['idServidor'])||fcpeCampo(r,['id'])||('srv_'+(String(fcpeCampo(r,['cpf'])).replace(/\D/g,'')||fcpeNorm(fcpeCampo(r,['nome'])).slice(0,30)));return {idServidor:id,id:id,nome:fcpeCampo(r,['nome']),cpf:fcpeCampo(r,['cpf']),cargo:fcpeCampo(r,['cargo']),lotacao:fcpeCampo(r,['lotacao']),fcpeAtual:fcpeCampo(r,['fcpeAtual'])||'NENHUMA',areaAtual:fcpeCampo(r,['areaAtual']),statusMinuta:fcpeCampo(r,['statusMinuta'])||'Em elaboração',fotoUrl:fcpeCampo(r,['fotoUrl']),historico:[]};}).filter(function(r){return r.nome;});if(!confirm('Foram encontrados '+remote.length+' servidores. Substituir a lista local por essa cópia online?'))return;appData.servidores=remote;gedepStorage.setItem(STORAGE_KEY,JSON.stringify(appData));atualizarTudo();gedepPilotoStatus('Sincronizado: '+remote.length+' servidores.');}).catch(function(err){const d=err&&err.result&&err.result.error?(err.result.error.message||('HTTP '+err.result.error.code)):(err.message||String(err));gedepPilotoStatus('Sheets: '+d,true);alert('Não foi possível buscar servidores: '+d);});
         }
-
-        function salvarServidorOnline(id) {
-            if (!gedepPilotoAccessToken) { gedepPilotoStatus('Faça login antes de gravar.', true); return; }
-            const servidor = appData.servidores.find(function(item) { return item.id === id; });
-            if (!servidor) { gedepPilotoStatus('Servidor não encontrado localmente.', true); return; }
-            if (!confirm('Gravar somente o servidor "' + servidor.nome + '" na planilha?')) return;
-            gedepPilotoStatus('Gravando servidor online...');
-            const headersPromise = gapi.client.sheets.spreadsheets.values.get({ spreadsheetId: GEDEP_PILOTO.spreadsheetId, range: GEDEP_PILOTO.range });
-            headersPromise.then(function(response) {
-                const values = response.result.values || [];
-                if (!values.length) throw new Error('A aba servidores não possui cabeçalho.');
-                const headers = values[0];
-                const rowValues = {
-                    id: servidor.id, nome: servidor.nome, cpf: servidor.cpf, cargo: servidor.cargo,
-                    lotacao: servidor.lotacao, fcpeAtual: servidor.fcpeAtual || 'NENHUMA', areaAtual: servidor.areaAtual || '',
-                    statusMinuta: servidor.statusMinuta || 'Em elaboração', fotoFileId: servidor.fotoFileId || '', fotoUrl: servidor.fotoUrl || '',
-                    whatsappNumero: servidor.whatsappNumero || '', atualizadoEm: new Date().toISOString(), atualizadoPor: gedepPilotoEmail
-                };
-                const linha = headers.map(function(h) { return rowValues[h] === undefined ? '' : rowValues[h]; });
-                const idCol = headers.indexOf('id');
-                const index = idCol >= 0 ? values.slice(1).findIndex(function(row) { return row[idCol] === id; }) : -1;
-                if (index >= 0) {
-                    const rowNumber = index + 2;
-                    return gapi.client.sheets.spreadsheets.values.update({
-                        spreadsheetId: GEDEP_PILOTO.spreadsheetId, range: 'servidores!A' + rowNumber + ':Z' + rowNumber,
-                        valueInputOption: 'USER_ENTERED', resource: { values: [linha] }
-                    });
-                }
-                return gapi.client.sheets.spreadsheets.values.append({
-                    spreadsheetId: GEDEP_PILOTO.spreadsheetId, range: 'servidores!A:Z',
-                    valueInputOption: 'USER_ENTERED', insertDataOption: 'INSERT_ROWS', resource: { values: [linha] }
-                });
-            }).then(function() {
-                gedepPilotoStatus('Servidor gravado na planilha.');
-            }).catch(function(err) {
-                const detalhe = err && err.result && err.result.error ? (err.result.error.message || ('HTTP ' + err.result.error.code)) : (err.message || String(err));
-                gedepPilotoStatus('Sheets: ' + detalhe, true); console.error('Erro ao gravar no Google Sheets:', err);
-            });
-        }
+        function fcpeLinha(headers,obj,base){const mapa=obj;return headers.map(function(h,i){const n=fcpeNorm(h);return mapa[n]!==undefined?mapa[n]:((base&&base[i])||'');});}
+        function fcpeExportarAba(nomeAba,registros,gerar){return Promise.resolve(gapi.client.sheets.spreadsheets.values.get({spreadsheetId:GEDEP_PILOTO.spreadsheetId,range:nomeAba+'!A:Z'})).then(function(resp){const values=resp.result.values||[],headers=values[0]||[];if(!headers.length)throw new Error('A aba '+nomeAba+' está sem cabeçalho.');const idName=nomeAba==='historico_fcpe'?'idHistorico':'idLancamento';const idCol=headers.findIndex(function(h){return fcpeNorm(h)===fcpeNorm(idName);});const atuais={};if(idCol>=0)values.slice(1).forEach(function(row,i){if(row[idCol])atuais[String(row[idCol])]=i+2;});const updates=[],novos=[];registros.forEach(function(reg){const obj=gerar(reg);const id=obj[fcpeNorm(idName)]||('fcpe_'+Date.now()+'_'+Math.random().toString(36).slice(2,7));obj[fcpeNorm(idName)]=id;const row=fcpeLinha(headers,obj,atuais[id]?values[atuais[id]-1]:[]);if(atuais[id])updates.push({range:nomeAba+'!A'+atuais[id]+':'+String.fromCharCode(64+headers.length)+atuais[id],values:[row]});else novos.push(row);});let promise=Promise.resolve();if(updates.length)promise=promise.then(function(){return gapi.client.sheets.spreadsheets.values.batchUpdate({spreadsheetId:GEDEP_PILOTO.spreadsheetId,resource:{valueInputOption:'USER_ENTERED',data:updates}});});if(novos.length)promise=promise.then(function(){return gapi.client.sheets.spreadsheets.values.append({spreadsheetId:GEDEP_PILOTO.spreadsheetId,range:nomeAba+'!A:'+String.fromCharCode(64+headers.length),valueInputOption:'USER_ENTERED',insertDataOption:'INSERT_ROWS',resource:{values:novos}});});return promise.then(function(){return updates.length+novos.length;});});}
+        function salvarServidorOnline(id){if(!gedepPilotoAccessToken){gedepPilotoStatus('Faça login antes de gravar.',true);return;}const servidor=appData.servidores.find(function(item){return fcpeId(item)===id||item.cpf===id;});if(!servidor){gedepPilotoStatus('Servidor não encontrado localmente.',true);return;}gedepPilotoStatus('Gravando servidor online...');Promise.resolve(gapi.client.sheets.spreadsheets.values.get({spreadsheetId:GEDEP_PILOTO.spreadsheetId,range:'servidores!A:Z'})).then(function(response){const values=response.result.values||[],headers=values[0]||[];if(!headers.length)throw new Error('A aba servidores não possui cabeçalho.');const idCol=headers.findIndex(function(h){return fcpeNorm(h)==='idservidor';});if(idCol<0)throw new Error('A aba servidores precisa ter a coluna idServidor.');const idValue=fcpeId(servidor);const idx=values.slice(1).findIndex(function(row){return String(row[idCol]||'')===idValue;});const obj={idservidor:idValue,id:idValue,nome:servidor.nome||'',cpf:servidor.cpf||'',cargo:servidor.cargo||'',lotacao:servidor.lotacao||'',fcpeatual:servidor.fcpeAtual||'NENHUMA',areaatual:servidor.areaAtual||'',statusminuta:servidor.statusMinuta||'Em elaboração',fotourl:servidor.fotoUrl||'',atualizadoem:new Date().toISOString(),atualizadopor:gedepPilotoEmail};const row=fcpeLinha(headers,obj,idx>=0?values[idx+1]:[]);const col=String.fromCharCode(64+headers.length);if(idx>=0)return gapi.client.sheets.spreadsheets.values.update({spreadsheetId:GEDEP_PILOTO.spreadsheetId,range:'servidores!A'+(idx+2)+':'+col+(idx+2),valueInputOption:'USER_ENTERED',resource:{values:[row]}});return gapi.client.sheets.spreadsheets.values.append({spreadsheetId:GEDEP_PILOTO.spreadsheetId,range:'servidores!A:'+col,valueInputOption:'USER_ENTERED',insertDataOption:'INSERT_ROWS',resource:{values:[row]}});}).then(function(){gedepPilotoStatus('Servidor gravado na planilha.');alert('Servidor gravado na planilha.');}).catch(function(err){const d=err&&err.result&&err.result.error?(err.result.error.message||('HTTP '+err.result.error.code)):(err.message||String(err));gedepPilotoStatus('Sheets: '+d,true);alert('Não foi possível gravar: '+d);});}
+        function gedepPilotoExportarTudo(){if(!gedepPilotoAccessToken){gedepPilotoStatus('Faça login antes de exportar.',true);return;}if(!confirm('Exportar histórico FCPE e lançamentos para as abas oficiais?'))return;gedepPilotoStatus('Exportando FCPE...');const historico=[];(appData.servidores||[]).forEach(function(s){(s.historico||[]).forEach(function(h){historico.push({idServidor:fcpeId(s),cpf:s.cpf||'',nome:s.nome||'',fcpe:h.fcpe||h.nivel||'',area:h.area||s.areaAtual||'',dataInicio:h.dataInicio||h.inicio||'',dataFim:h.dataFim||h.fim||'',ato:h.ato||'',observacoes:h.observacoes||''});});});const lancamentos=appData.lancamentos||[];Promise.all([fcpeExportarAba('historico_fcpe',historico,function(x){return {idhistorico:'hist_'+x.idServidor+'_'+(x.dataInicio||Date.now()),idservidor:x.idServidor,cpf:x.cpf,nome:x.nome,fcpe:x.fcpe,area:x.area,datainicio:x.dataInicio,datafim:x.dataFim,ato:x.ato,observacoes:x.observacoes,atualizadoem:new Date().toISOString(),atualizadopor:gedepPilotoEmail};}),fcpeExportarAba('lancamentos',lancamentos,function(x){const s=(appData.servidores||[]).find(function(y){return fcpeId(y)===x.servidorId;});const f=(appData.fcpes||[]).find(function(y){return y.id===x.fcpeId;});return {idlancamento:x.id,idservidor:s?fcpeId(s):'',cpf:s?s.cpf||'':'',nome:s?s.nome||'':'',tipo:x.acao||'',competencia:'',valor:'',data:new Date().toISOString(),status:'Pendente',observacoes:(x.fcpeAnterior||'')+(f?' FCPE '+f.nivel:'') ,atualizadoem:new Date().toISOString(),atualizadopor:gedepPilotoEmail};})]).then(function(){gedepPilotoStatus('FCPE exportado para as abas oficiais.');alert('Histórico e lançamentos exportados.');}).catch(function(err){const d=err&&err.result&&err.result.error?(err.result.error.message||('HTTP '+err.result.error.code)):(err.message||String(err));gedepPilotoStatus('Sheets: '+d,true);alert('Não foi possível exportar FCPE: '+d);});}
 
         function gedepPilotoLogout() {
             if (gedepPilotoAccessToken && window.google && google.accounts && google.accounts.oauth2) google.accounts.oauth2.revoke(gedepPilotoAccessToken);
@@ -617,6 +566,7 @@
             document.getElementById('btnGoogleLogin').classList.remove('hidden');
             document.getElementById('btnGoogleSync').classList.add('hidden');
             document.getElementById('btnGoogleLogout').classList.add('hidden');
+            document.getElementById('btnGoogleExport').classList.add('hidden');
             gedepPilotoStatus('Desconectado.');
         }
     </script>
@@ -1021,7 +971,8 @@
                 const s = appData.servidores.find(item => item.id === id);
                 if (s) { s.nome = nome; s.cpf = cpf; s.cargo = cargo; s.lotacao = lotacao; }
             } else {
-                appData.servidores.push({ id: 's_' + Date.now(), nome, cpf, cargo, lotacao, fcpeAtual: 'NENHUMA', areaAtual: 'FINALÍSTICA', statusMinuta: 'Em elaboração', historico: [] });
+                const novoId = 'srv_' + (String(cpf).replace(/\D/g, '') || Date.now());
+                appData.servidores.push({ idServidor: novoId, id: novoId, nome, cpf, cargo, lotacao, fcpeAtual: 'NENHUMA', areaAtual: 'FINALÍSTICA', statusMinuta: 'Em elaboração', historico: [] });
             }
             limparFormServidor();
             salvarDados();
@@ -1590,6 +1541,6 @@
         window.onload = function() {
             carregarDados();
         };
-    </script>
+    </script>1504
 </body>
 </html>
