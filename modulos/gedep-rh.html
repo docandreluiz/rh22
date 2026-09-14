@@ -139,6 +139,7 @@
                 <div id="file-status" class="file-status">Nenhum arquivo carregado</div>
                 <button id="btnRhLogin" onclick="rhLogin()" class="btn btn-dark">Entrar com Google</button>
                 <button id="btnRhSync" onclick="rhSincronizar()" class="btn btn-blue" style="display:none">Buscar servidores online</button>
+                <button id="btnRhExport" onclick="rhExportarPlanilha()" class="btn btn-green" style="display:none">Enviar base para planilha</button>
                 <button id="btnRhLogout" onclick="rhLogout()" class="btn btn-gray" style="display:none">Sair</button>
                 <span id="rhGoogleStatus" style="font-size:0.72rem" aria-live="polite"></span>
             </div>
@@ -793,6 +794,7 @@
                                         rhEmail = String(user.email || '').toLowerCase();
                                         document.getElementById('btnRhLogin').style.display = 'none';
                                         document.getElementById('btnRhSync').style.display = 'inline-block';
+                                        document.getElementById('btnRhExport').style.display = 'inline-block';
                                         document.getElementById('btnRhLogout').style.display = 'inline-block';
                                         rhStatus('Conectado: ' + rhEmail);
                                     }).catch(function(err) { rhStatus(err.message, true); });
@@ -835,12 +837,26 @@
                 }).catch(function(err) { const d = err && err.result && err.result.error ? (err.result.error.message || ('HTTP ' + err.result.error.code)) : (err.message || String(err)); rhStatus('Sheets: ' + d, true); console.error(err); });
         }
 
+        function rhExportarPlanilha() {
+            if (!rhAccessToken) { rhStatus('Faça login antes de exportar.', true); return; }
+            const records=appData.records||[]; if(!records.length){rhStatus('Não há registros carregados para exportar.',true);return;}
+            if(!confirm('Enviar '+records.length+' servidores para a aba servidores? Registros com o mesmo ID serão atualizados.'))return;
+            rhStatus('Preparando exportação em lote...');
+            gapi.client.sheets.spreadsheets.values.get({spreadsheetId:GEDEP_CONFIG.spreadsheetId,range:'servidores!A:Z'}).then(function(response){
+                const values=response.result.values||[],headers=values[0]||[];if(!headers.length)throw new Error('A aba servidores está vazia ou sem cabeçalho.');
+                const idCol=headers.findIndex(function(h){return String(h).toLowerCase()==='id';}), atuais={};if(idCol>=0)values.slice(1).forEach(function(row,i){if(row[idCol])atuais[String(row[idCol])]=i+2;});
+                const updates=[],novos=[];records.forEach(function(r){const obj={id:r['ID']||'',nome:r['NOME SERVIDOR']||'',cpf:r['CPF']||'',cargo:r['CARGO EFETIVO']||'',fcpeAtual:r['CARGO COMISSIONADO']||'',lotacao:r['LOTAÇÃO']||r['NOME ÓRGÃO']||'',areaAtual:r['ÁREA']||'',statusMinuta:r['STATUS']||'',fotoUrl:r['FOTO URL']||'',whatsappNumero:r['WHATSAPP']||'',atualizadoEm:new Date().toISOString(),atualizadoPor:rhEmail};const linha=headers.map(function(h){const k=String(h).toLowerCase();const map={id:'id',nome:'nome',cpf:'cpf',cargo:'cargo',fcpeatual:'fcpeAtual',lotacao:'lotacao',nomeorgao:'lotacao',area:'areaAtual',status:'statusMinuta',fotourl:'fotoUrl',whatsapp:'whatsappNumero',atualizadoem:'atualizadoEm',atualizadopor:'atualizadoPor'};return obj[map[k]]||'';});if(atuais[obj.id])updates.push({range:'servidores!A'+atuais[obj.id]+':Z'+atuais[obj.id],values:[linha]});else novos.push(linha);});
+                let promise=Promise.resolve();if(updates.length)promise=promise.then(function(){return gapi.client.sheets.spreadsheets.values.batchUpdate({spreadsheetId:GEDEP_CONFIG.spreadsheetId,resource:{valueInputOption:'USER_ENTERED',data:updates}});});if(novos.length)promise=promise.then(function(){return gapi.client.sheets.spreadsheets.values.append({spreadsheetId:GEDEP_CONFIG.spreadsheetId,range:'servidores!A:Z',valueInputOption:'USER_ENTERED',insertDataOption:'INSERT_ROWS',resource:{values:novos}});});return promise.then(function(){return{u:updates.length,n:novos.length};});
+            }).then(function(r){rhStatus('Exportação concluída: '+r.n+' incluídos e '+r.u+' atualizados.');alert('Exportação concluída.\nIncluídos: '+r.n+'\nAtualizados: '+r.u);}).catch(function(err){const d=err&&err.result&&err.result.error?(err.result.error.message||('HTTP '+err.result.error.code)):(err.message||String(err));rhStatus('Sheets: '+d,true);alert('Não foi possível exportar: '+d);});
+        }
+
         function rhLogout() {
             if (rhAccessToken && window.google && google.accounts && google.accounts.oauth2) google.accounts.oauth2.revoke(rhAccessToken);
             rhAccessToken = null; rhEmail = '';
             if (window.gapi) gapi.client.setToken(null);
             document.getElementById('btnRhLogin').style.display = 'inline-block';
             document.getElementById('btnRhSync').style.display = 'none';
+            document.getElementById('btnRhExport').style.display = 'none';
             document.getElementById('btnRhLogout').style.display = 'none';
             rhStatus('Desconectado.');
         }

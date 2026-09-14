@@ -167,7 +167,10 @@
             <div class="bg-white p-6 rounded-lg shadow border border-slate-200 space-y-4">
                 <div class="flex flex-col md:flex-row justify-between items-center gap-4">
                     <h2 class="text-lg font-bold text-slate-800">Diretório de Pessoas Cadastradas</h2>
-                    <input type="text" id="searchServidor" onkeyup="renderTabelaServidores()" placeholder="Buscar por nome, CPF ou lotação..." class="border border-slate-300 rounded px-3 py-1.5 text-sm w-80">
+                    <div class="flex items-center gap-2 flex-wrap">
+                        <button onclick="cargosExportarTodos()" class="bg-cyan-700 hover:bg-cyan-800 text-white font-semibold px-3 py-1.5 rounded text-xs"><i class="fa-solid fa-cloud-arrow-up mr-1"></i> Exportar todos para a planilha</button>
+                        <input type="text" id="searchServidor" onkeyup="renderTabelaServidores()" placeholder="Buscar por nome, CPF ou lotação..." class="border border-slate-300 rounded px-3 py-1.5 text-sm w-80">
+                    </div>
                 </div>
                 <div class="overflow-x-auto">
                     <table class="w-full text-left border-collapse text-sm">
@@ -413,6 +416,21 @@
                 if (index >= 0) return gapi.client.sheets.spreadsheets.values.update({ spreadsheetId: GEDEP_CONFIG.spreadsheetId, range: 'servidores!A' + (index + 2) + ':Z' + (index + 2), valueInputOption: 'USER_ENTERED', resource: { values: [linha] } });
                 return gapi.client.sheets.spreadsheets.values.append({ spreadsheetId: GEDEP_CONFIG.spreadsheetId, range: 'servidores!A:Z', valueInputOption: 'USER_ENTERED', insertDataOption: 'INSERT_ROWS', resource: { values: [linha] } });
             }).then(function() { cargosStatus('Servidor gravado na planilha.'); }).catch(function(err) { const d = err && err.result && err.result.error ? (err.result.error.message || ('HTTP ' + err.result.error.code)) : (err.message || String(err)); cargosStatus('Sheets: ' + d, true); });
+        }
+
+        function cargosExportarTodos() {
+            if (!cargosAccessToken) { cargosStatus('Faça login antes de exportar.', true); return; }
+            const servidores=appData.servidores||[];
+            if (!servidores.length) { cargosStatus('Não há cadastros locais para exportar.', true); return; }
+            if (!confirm('Exportar '+servidores.length+' cadastros para a aba servidores? Registros com o mesmo ID serão atualizados.')) return;
+            cargosStatus('Preparando exportação em lote...');
+            gapi.client.sheets.spreadsheets.values.get({spreadsheetId:GEDEP_CONFIG.spreadsheetId,range:CARGOS_SHEET_RANGE}).then(function(response){
+                const values=response.result.values||[],headers=values[0]||[]; if(!headers.length) throw new Error('A aba servidores está vazia ou sem cabeçalho.');
+                const atuais={}; const idCol=headers.indexOf('id'); if(idCol>=0) values.slice(1).forEach(function(row,i){if(row[idCol])atuais[String(row[idCol])]=i+2;});
+                const rows=servidores.map(function(servidor){const row={id:servidor.id,nome:servidor.nome||'',cpf:servidor.cpf||'',cargo:servidor.cargoEfetivo||'',lotacao:servidor.lotacao||'',fcpeAtual:servidor.cargoComissionado||'NENHUMA',areaAtual:servidor.areaAtual||'',statusMinuta:servidor.statusMinuta||'Em elaboração',fotoFileId:'',fotoUrl:servidor.foto||'',whatsappNumero:'',atualizadoEm:new Date().toISOString(),atualizadoPor:cargosEmail};return {id:servidor.id,values:headers.map(function(h){return row[h]===undefined?'':row[h];})};});
+                const updates=[],novos=[]; rows.forEach(function(item){if(atuais[item.id])updates.push({range:'servidores!A'+atuais[item.id]+':Z'+atuais[item.id],values:[item.values]});else novos.push(item.values);});
+                let promise=Promise.resolve(); if(updates.length)promise=promise.then(function(){return gapi.client.sheets.spreadsheets.values.batchUpdate({spreadsheetId:GEDEP_CONFIG.spreadsheetId,resource:{valueInputOption:'USER_ENTERED',data:updates}});}); if(novos.length)promise=promise.then(function(){return gapi.client.sheets.spreadsheets.values.append({spreadsheetId:GEDEP_CONFIG.spreadsheetId,range:'servidores!A:Z',valueInputOption:'USER_ENTERED',insertDataOption:'INSERT_ROWS',resource:{values:novos}});}); return promise.then(function(){return {u:updates.length,n:novos.length};});
+            }).then(function(r){cargosStatus('Exportação concluída: '+r.n+' incluídos e '+r.u+' atualizados.');alert('Exportação concluída.\nIncluídos: '+r.n+'\nAtualizados: '+r.u);}).catch(function(err){const d=err&&err.result&&err.result.error?(err.result.error.message||('HTTP '+err.result.error.code)):(err.message||String(err));cargosStatus('Sheets: '+d,true);alert('Não foi possível exportar: '+d);});
         }
 
         function cargosLogout() {
