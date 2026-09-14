@@ -6,6 +6,7 @@
   function data(){try{return typeof appData!=='undefined'?appData:(window.appData||{});}catch(e){return window.appData||{};}}
   function findRecord(mod,id){
     id=decodeURIComponent(String(id));var d=data();
+    if(mod==='rh' && id.indexOf('__rhidx:')===0){var idx=Number(id.slice(8));return (d.records||[])[idx]||null;}
     if(mod==='rh') return (d.records||[]).find(function(r){return String(r.idServidor||r.id||r.CPF||r['CPF']||r['NOME SERVIDOR']||'')===String(id);});
     return (d.servidores||[]).find(function(r){return String(r.idServidor||r.id||r.cpf||'')===String(id);});
   }
