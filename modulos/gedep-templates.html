@@ -324,7 +324,10 @@
             align-items: center;
         }
     </style>
+    <script src="https://apis.google.com/js/api.js" async defer></script>
+    <script src="https://accounts.google.com/gsi/client" async defer></script>
     <script src="../gedep-storage.js"></script>
+    <script src="../gedep-google.js"></script>
 </head>
 
 
@@ -336,6 +339,9 @@
     <div class="barra-seguranca">
         <span><strong>v9.2 Segurança Total:</strong> Esta versão não acessa o storage para evitar alertas do Chrome. Use os botões em cada aba.</span>
         <div>
+            <button id="btnTmplLogin" class="btn btn-azul" style="padding: 5px 12px; font-size: 12px;" onclick="tmplLogin()">Entrar com Google</button>
+            <button id="btnTmplLogout" class="btn btn-cinza" style="padding: 5px 12px; font-size: 12px; display:none" onclick="tmplLogout()">Sair</button>
+            <span id="tmplGoogleStatus" style="font-size:12px;margin-right:8px" aria-live="polite"></span>
             <button class="btn btn-azul" style="padding: 5px 12px; font-size: 12px;" onclick="global_copiarBackup()">Copiar Sessão (Texto)</button>
         </div>
     </div>
@@ -426,6 +432,7 @@
                 </div>
                 <div class="botoes" style="margin-top: 15px;">
                     <button class="btn btn-azul" onclick="ex_gerarMinuta()">Gerar Minuta e Tabela</button>
+                    <button class="btn btn-verde" onclick="tmplSalvarProcesso('ex')">☁️ Salvar processo na planilha</button>
                 </div>
                 <div id="ex-container-tabelas" style="margin:20px 0; overflow-x: auto;"></div>
                 <textarea class="despacho" id="ex-txt-minuta" readonly placeholder="A minuta aparecerá aqui após clicar em Gerar."></textarea>
@@ -508,6 +515,7 @@
                 <h2>3. Produção e Resultado</h2>
                 <div class="botoes">
                     <button class="btn btn-azul" onclick="ck_processarTudo()">Processar Checklist e Gerar Despacho</button>
+                    <button class="btn btn-verde" onclick="tmplSalvarProcesso('ck')">☁️ Salvar checklist na planilha</button>
                 </div>
                 <div id="ck-resultado" style="margin-top: 15px;"></div>
             </section>
@@ -738,6 +746,22 @@
             }
 
             return headerLines.length >= 3 ? headerLines[headerLines.length - 1] : '';
+        }
+
+        let tmplTokenClient = null;
+        let tmplAccessToken = null;
+        let tmplEmail = '';
+        function tmplStatus(text,error){const el=document.getElementById('tmplGoogleStatus');if(el){el.textContent=text||'';el.style.color=error?'#b91c1c':'#166534';}}
+        function tmplLogin(){tmplStatus('Carregando autenticação...');const iniciar=function(){if(!window.google||!google.accounts||!google.accounts.oauth2||!window.gapi){tmplStatus('Bibliotecas Google ainda carregando. Tente novamente.',true);return;}gapi.load('client',function(){gapi.client.init({discoveryDocs:['https://sheets.googleapis.com/$discovery/rest?version=v4']}).then(function(){tmplTokenClient=google.accounts.oauth2.initTokenClient({client_id:GEDEP_CONFIG.clientId,scope:GEDEP_CONFIG.scope,callback:function(response){if(response.error){tmplStatus('Login cancelado ou recusado.',true);return;}tmplAccessToken=response.access_token;gapi.client.setToken({access_token:tmplAccessToken});fetch('https://openidconnect.googleapis.com/v1/userinfo',{headers:{Authorization:'Bearer '+tmplAccessToken}}).then(function(r){if(!r.ok)throw new Error('Não foi possível confirmar a conta Google.');return r.json();}).then(function(user){tmplEmail=String(user.email||'').toLowerCase();document.getElementById('btnTmplLogin').style.display='none';document.getElementById('btnTmplLogout').style.display='inline-block';tmplStatus('Conectado: '+tmplEmail);}).catch(function(err){tmplStatus(err.message,true);});}});tmplTokenClient.requestAccessToken({prompt:'consent'});}).catch(function(err){tmplStatus('Falha ao preparar o Sheets API.',true);console.error(err);});});};if(window.google&&window.gapi)iniciar();else setTimeout(iniciar,1200);}
+        function tmplLogout(){if(tmplAccessToken&&window.google&&google.accounts&&google.accounts.oauth2)google.accounts.oauth2.revoke(tmplAccessToken);tmplAccessToken=null;tmplEmail='';if(window.gapi)gapi.client.setToken(null);document.getElementById('btnTmplLogin').style.display='inline-block';document.getElementById('btnTmplLogout').style.display='none';tmplStatus('Desconectado.');}
+        function tmplSalvarProcesso(tipo){
+            if(!tmplAccessToken){alert('Entre com Google antes de salvar na planilha.');return;}
+            const val=id=>String(document.getElementById(id)?.value||'').trim();
+            const d=tipo==='ex'?{processo:val('ex-processo'),interessados:val('ex-nome'),assunto:'Exoneração / rescisão',status:'Em elaboração',procedencia:'GEDEP Templates',destino:val('ex-lotacao'),linhaRef:val('ex-sei-ref')}:{processo:val('ck-d-processo'),interessados:val('ck-d-nome'),assunto:'Redução de jornada - checklist PcD',status:val('ck-txt-controle')?'Em instrução':'Em elaboração',procedencia:'GEDEP Templates',destino:val('ck-d-unidade'),linhaRef:val('ck-d-protocolo')};
+            d.atualizadoEm=new Date().toISOString();d.atualizadoPor=tmplEmail;
+            if(!d.processo){alert('Informe o número do processo SEI antes de salvar.');return;}
+            tmplStatus('Salvando processo...');
+            gapi.client.sheets.spreadsheets.values.get({spreadsheetId:GEDEP_CONFIG.spreadsheetId,range:'processos!A:Z'}).then(function(response){const values=response.result.values||[],headers=values[0]||[];if(!headers.length)throw new Error('A aba processos está vazia ou sem cabeçalho.');const normal=k=>String(k||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/[^a-z0-9]/g,'');const aliases={processo:['processo','processosei','numerosei'],interessados:['interessados','interessado'],assunto:['assunto'],status:['status','situacao'],procedencia:['procedencia','origem'],destino:['destino'],linhaRef:['linhareferencia','linhadereferencia','linharef'],atualizadoEm:['atualizadoem','dataatualizacao'],atualizadoPor:['atualizadopor','responsavelalteracao']};const col=headers.findIndex(h=>aliases.processo.includes(normal(h)));const found=col>=0?values.slice(1).findIndex(r=>String(r[col]||'').trim()===d.processo):-1;const base=found>=0?values[found+1]:[];const row=headers.map((h,i)=>{const n=normal(h);for(const c of Object.keys(aliases))if(aliases[c].includes(n))return d[c]||'';return base[i]||'';});if(found>=0)return gapi.client.sheets.spreadsheets.values.update({spreadsheetId:GEDEP_CONFIG.spreadsheetId,range:'processos!A'+(found+2)+':Z'+(found+2),valueInputOption:'USER_ENTERED',resource:{values:[row]}}).then(()=> 'atualizado');return gapi.client.sheets.spreadsheets.values.append({spreadsheetId:GEDEP_CONFIG.spreadsheetId,range:'processos!A:Z',valueInputOption:'USER_ENTERED',insertDataOption:'INSERT_ROWS',resource:{values:[row]}}).then(()=> 'incluído');}).then(function(acao){tmplStatus('Processo '+acao+' na planilha.');alert('Processo '+acao+' com sucesso na aba processos.');}).catch(function(err){const msg=err&&err.result&&err.result.error?(err.result.error.message||('HTTP '+err.result.error.code)):(err.message||String(err));tmplStatus('Sheets: '+msg,true);alert('Não foi possível salvar: '+msg);});
         }
 
         // ============================================================
