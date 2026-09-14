@@ -1419,7 +1419,15 @@
             window.print();
         }
 
-        function fcpeNivelDaImportacao(cols) { const texto=cols.map(function(x){return String(x||'');}).find(function(x){return /\bFCPE\s*[- ]?\s*\d+\b/i.test(x);}); const m=texto&&texto.match(/\bFCPE\s*[- ]?\s*\d+\b/i); return m ? m[0].replace(/\s+/g,'').replace('FCPE','FCPE-') : 'NENHUMA'; }
+        function fcpeNivelDaImportacao(cols) {
+            const texto = cols[3] || '';
+            const numero = Number(String(texto).replace(/[^0-9,.-]/g, '').replace(/\./g, '').replace(',', '.'));
+            const tabela = {3000:'FCPE-1',2850:'FCPE-2',2700:'FCPE-3',2550:'FCPE-4',2400:'FCPE-5',2250:'FCPE-6',2100:'FCPE-7',1950:'FCPE-8',1800:'FCPE-9',1650:'FCPE-10',1500:'FCPE-11',1350:'FCPE-12',1200:'FCPE-13',1050:'FCPE-14',900:'FCPE-15',750:'FCPE-16',600:'FCPE-17',450:'FCPE-18'};
+            if (tabela[numero]) return tabela[numero];
+            const textoNivel = cols.map(function(x){return String(x||'');}).find(function(x){return /\bFCPE\s*[- ]?\s*\d+\b/i.test(x);});
+            const match = textoNivel && textoNivel.match(/\bFCPE\s*[- ]?\s*\d+\b/i);
+            return match ? match[0].replace(/\s+/g,'').replace('FCPE','FCPE-') : 'NENHUMA';
+        }
 
         function importarPlanilhaModeloCSV(event) {
             const file = event.target.files[0];
