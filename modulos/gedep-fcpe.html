@@ -178,9 +178,20 @@
             </div>
 
             <div class="bg-white p-6 rounded-lg shadow border border-slate-200">
-                <div class="flex justify-between items-center mb-4">
+                <div class="flex justify-between items-center mb-4 gap-3 flex-wrap">
                     <h2 class="text-lg font-bold text-slate-800">Servidores Cadastrados</h2>
-                    <input type="text" id="searchServidor" onkeyup="renderTabelaServidores()" placeholder="Buscar servidor..." class="border border-slate-300 rounded px-3 py-1.5 text-sm w-64">
+                    <div class="flex items-center gap-2 flex-wrap">
+                        <input type="text" id="searchServidor" onkeyup="renderTabelaServidores()" placeholder="Buscar servidor..." class="border border-slate-300 rounded px-3 py-1.5 text-sm w-64">
+                        <select id="statusMassaFCPE" class="border border-slate-300 rounded px-2 py-1.5 text-sm">
+                            <option value="">Alterar status em massa...</option>
+                            <option value="Ativa">Ativa</option>
+                            <option value="Em elaboração">Em elaboração</option>
+                            <option value="Publicada">Publicada</option>
+                            <option value="Suspensa">Suspensa</option>
+                            <option value="Encerrada">Encerrada</option>
+                        </select>
+                        <button type="button" onclick="aplicarStatusMassaFCPE()" class="bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-1.5 rounded text-xs font-semibold">Aplicar à lista</button>
+                    </div>
                 </div>
                 <div class="overflow-x-auto">
                     <table class="w-full text-left border-collapse text-sm">
@@ -552,7 +563,7 @@
         function fcpeCampo(raw,names){for(const nome of names){const key=Object.keys(raw).find(k=>fcpeNorm(k)===fcpeNorm(nome));if(key&&String(raw[key]||'').trim())return raw[key];}return '';}
         function fcpeId(s){return String(s.idServidor||s.id||'').trim();}
         function gedepPilotoSincronizar(){
-            if(!gedepPilotoAccessToken){gedepPilotoStatus('Faça login antes de buscar dados.',true);return;}gedepPilotoStatus('Buscando servidores...');Promise.resolve(gapi.client.sheets.spreadsheets.values.get({spreadsheetId:GEDEP_PILOTO.spreadsheetId,range:'servidores!A:Z'})).then(function(response){const values=response.result.values||[];if(!values.length)throw new Error('A aba servidores está vazia ou não foi encontrada.');const headers=values[0];const remote=values.slice(1).map(function(row){const r={};headers.forEach(function(h,i){r[h]=row[i]||'';});const id=fcpeCampo(r,['idServidor'])||fcpeCampo(r,['id'])||('srv_'+(String(fcpeCampo(r,['cpf'])).replace(/\D/g,'')||fcpeNorm(fcpeCampo(r,['nome'])).slice(0,30)));return {idServidor:id,id:id,nome:fcpeCampo(r,['nome']),cpf:fcpeCampo(r,['cpf']),cargo:fcpeCampo(r,['cargo']),lotacao:fcpeCampo(r,['lotacao']),fcpeAtual:fcpeCampo(r,['fcpeAtual'])||'NENHUMA',areaAtual:fcpeCampo(r,['areaAtual']),statusMinuta:fcpeCampo(r,['statusMinuta'])||'Em elaboração',fotoUrl:fcpeCampo(r,['fotoUrl']),historico:[]};}).filter(function(r){return r.nome;});if(!confirm('Foram encontrados '+remote.length+' servidores. Substituir a lista local por essa cópia online?'))return;appData.servidores=remote;gedepStorage.setItem(STORAGE_KEY,JSON.stringify(appData));atualizarTudo();gedepPilotoStatus('Sincronizado: '+remote.length+' servidores.');}).catch(function(err){const d=err&&err.result&&err.result.error?(err.result.error.message||('HTTP '+err.result.error.code)):(err.message||String(err));gedepPilotoStatus('Sheets: '+d,true);alert('Não foi possível buscar servidores: '+d);});
+            if(!gedepPilotoAccessToken){gedepPilotoStatus('Faça login antes de buscar dados.',true);return;}gedepPilotoStatus('Buscando servidores...');Promise.resolve(gapi.client.sheets.spreadsheets.values.get({spreadsheetId:GEDEP_PILOTO.spreadsheetId,range:'servidores!A:Z'})).then(function(response){const values=response.result.values||[];if(!values.length)throw new Error('A aba servidores está vazia ou não foi encontrada.');const headers=values[0];const remote=values.slice(1).map(function(row){const r={};headers.forEach(function(h,i){r[h]=row[i]||'';});const id=fcpeCampo(r,['idServidor'])||fcpeCampo(r,['id'])||('srv_'+(String(fcpeCampo(r,['cpf'])).replace(/\D/g,'')||fcpeNorm(fcpeCampo(r,['nome'])).slice(0,30)));return {idServidor:id,id:id,nome:fcpeCampo(r,['nome']),cpf:fcpeCampo(r,['cpf']),cargo:fcpeCampo(r,['cargo']),lotacao:fcpeCampo(r,['lotacao']),fcpeAtual:fcpeCampo(r,['fcpeAtual'])||'NENHUMA',areaAtual:fcpeCampo(r,['areaAtual']),statusMinuta:fcpeCampo(r,['statusMinuta'])||'Ativa',fotoUrl:fcpeCampo(r,['fotoUrl']),historico:[]};}).filter(function(r){return r.nome;});if(!confirm('Foram encontrados '+remote.length+' servidores. Substituir a lista local por essa cópia online?'))return;appData.servidores=remote;gedepStorage.setItem(STORAGE_KEY,JSON.stringify(appData));atualizarTudo();gedepPilotoStatus('Sincronizado: '+remote.length+' servidores.');}).catch(function(err){const d=err&&err.result&&err.result.error?(err.result.error.message||('HTTP '+err.result.error.code)):(err.message||String(err));gedepPilotoStatus('Sheets: '+d,true);alert('Não foi possível buscar servidores: '+d);});
         }
         function fcpeLinha(headers,obj,base){const mapa=obj;return headers.map(function(h,i){const n=fcpeNorm(h);return mapa[n]!==undefined?mapa[n]:((base&&base[i])||'');});}
         function fcpeExportarAba(nomeAba,registros,gerar){return Promise.resolve(gapi.client.sheets.spreadsheets.values.get({spreadsheetId:GEDEP_PILOTO.spreadsheetId,range:nomeAba+'!A:Z'})).then(function(resp){const values=resp.result.values||[],headers=values[0]||[];if(!headers.length)throw new Error('A aba '+nomeAba+' está sem cabeçalho.');const idName=nomeAba==='historico_fcpe'?'idHistorico':'idLancamento';const idCol=headers.findIndex(function(h){return fcpeNorm(h)===fcpeNorm(idName);});const atuais={};if(idCol>=0)values.slice(1).forEach(function(row,i){if(row[idCol])atuais[String(row[idCol])]=i+2;});const updates=[],novos=[];registros.forEach(function(reg){const obj=gerar(reg);const id=obj[fcpeNorm(idName)]||('fcpe_'+Date.now()+'_'+Math.random().toString(36).slice(2,7));obj[fcpeNorm(idName)]=id;const row=fcpeLinha(headers,obj,atuais[id]?values[atuais[id]-1]:[]);if(atuais[id])updates.push({range:nomeAba+'!A'+atuais[id]+':'+String.fromCharCode(64+headers.length)+atuais[id],values:[row]});else novos.push(row);});let promise=Promise.resolve();if(updates.length)promise=promise.then(function(){return gapi.client.sheets.spreadsheets.values.batchUpdate({spreadsheetId:GEDEP_PILOTO.spreadsheetId,resource:{valueInputOption:'USER_ENTERED',data:updates}});});if(novos.length)promise=promise.then(function(){return gapi.client.sheets.spreadsheets.values.append({spreadsheetId:GEDEP_PILOTO.spreadsheetId,range:nomeAba+'!A:'+String.fromCharCode(64+headers.length),valueInputOption:'USER_ENTERED',insertDataOption:'INSERT_ROWS',resource:{values:novos}});});return promise.then(function(){return updates.length+novos.length;});});}
@@ -643,6 +654,19 @@
         function fcpeTemFuncao(valor) {
             const v = fcpeNorm(valor);
             return !!v && !['nenhuma','nenhum','semfcpe','naopossui','naoaplicavel','n/a','na'].includes(v);
+        }
+
+        function aplicarStatusMassaFCPE() {
+            const campo = document.getElementById('statusMassaFCPE');
+            const status = campo ? campo.value : '';
+            if (!status) { alert('Selecione o status que deseja aplicar.'); return; }
+            const lista = appData.servidores || [];
+            if (!lista.length) { alert('Não há servidores cadastrados.'); return; }
+            if (!confirm('Aplicar o status "' + status + '" aos ' + lista.length + ' servidores?')) return;
+            lista.forEach(function(s) { s.statusMinuta = status; });
+            if (campo) campo.value = '';
+            salvarDados();
+            alert('Status atualizado para ' + lista.length + ' servidores. Clique em Gravar lista FCPE para enviar à planilha.');
         }
 
         function atualizarEstatisticas() {
@@ -1404,15 +1428,17 @@
                             const colLotacao = cols[7] ? cols[7].trim() : '';
                             if (col0 && !isNaN(col0) && parseInt(col0) > 0 && parseInt(col0) <= 150) {
                                 if (colNome && colNome !== 'Nome Servidor') {
+                                    const novoId = 'srv_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5);
                                     novosServidores.push({
-                                        id: 'imp_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5),
+                                        idServidor: novoId,
+                                        id: novoId,
                                         nome: colNome,
                                         cpf: '***.000.000-**',
                                         cargo: colCargo || 'Servidor GOINFRA',
                                         lotacao: colLotacao || 'Diretoria de Obras',
                                         fcpeAtual: 'FCPE-1',
                                         areaAtual: 'FINALÍSTICA',
-                                        statusMinuta: 'Em elaboração',
+                                        statusMinuta: 'Ativa',
                                         historico: []
                                     });
                                 }
@@ -1479,5 +1505,5 @@
             carregarDados();
         };
     </script>
-</body>1530
+</body>
 </html>
