@@ -814,7 +814,7 @@
             rhStatus('Buscando servidores, ramais, fotos e processos online...');
             const normal=function(v){return String(v||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/[^a-z0-9]/g,'');};
             const get=function(obj,names){for(const name of names){const key=Object.keys(obj).find(k=>normal(k)===normal(name));if(key&&String(obj[key]||'').trim())return obj[key];}return '';};
-            const lerOpcional=function(range){return gapi.client.sheets.spreadsheets.values.get({spreadsheetId:GEDEP_CONFIG.spreadsheetId,range:range}).catch(function(){return {result:{values:[]}};});};
+            const lerOpcional=function(range){return Promise.resolve(gapi.client.sheets.spreadsheets.values.get({spreadsheetId:GEDEP_CONFIG.spreadsheetId,range:range})).catch(function(){return {result:{values:[]}};});};
             Promise.all([
                 lerOpcional('servidores!A:Z'),
                 lerOpcional('processos!A:Z'),
@@ -2047,5 +2047,5 @@
             }
         };
     </script>
-</body>1107
+</body> 1122
 </html>
