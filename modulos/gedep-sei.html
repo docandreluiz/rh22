@@ -772,15 +772,15 @@
         function seiSincronizar() {
             if(!seiAccessToken){seiStatus('Faça login antes de buscar processos.',true);return;}
             seiStatus('Buscando processos online...');
-            gapi.client.sheets.spreadsheets.values.get({spreadsheetId:GEDEP_CONFIG.spreadsheetId,range:'processos!A:Z'}).then(function(response){
+            Promise.resolve(gapi.client.sheets.spreadsheets.values.get({spreadsheetId:GEDEP_CONFIG.spreadsheetId,range:'processos!A:Z'})).then(function(response){
                 const values=response.result.values||[]; if(!values.length)throw new Error('A aba processos está vazia ou sem cabeçalho.');
                 const headers=values[0];
-                const rows=values.slice(1).map(function(row){const r={};headers.forEach(function(h,i){r[String(h).trim()]=row[i]||'';});return r;}).filter(function(r){return Object.values(r).some(Boolean);});
-                const pick=function(r,names){for(const n of names){if(r[n]!==undefined&&String(r[n]).trim())return r[n];}return '';};
-                const dados=rows.map(function(r){const status=pick(r,['status','Status','situacao','situação']);return aplicarEdicaoHistorico({assessor:pick(r,['assessor','atribuicao','atribuição','responsavel','responsável']),recebimento:pick(r,['recebimento','data recebimento']),envio:pick(r,['envio','data envio','data de envio']),prazo:pick(r,['prazo','prazo limite','prazo limite para envio','data limite']),status:status,statusCategoria:categorizarStatus(status),procedencia:pick(r,['procedencia','procedência','origem']),destino:pick(r,['destino']),destinoCategoria:categorizarDestino(pick(r,['destino'])),processo:pick(r,['processo','processo sei','processoSei','numero sei','número sei']),assunto:pick(r,['assunto','tema']),linhaRef:pick(r,['linhaRef','linha de referencia','linha de referência']),interessados:pick(r,['interessados','interessado']),recorrencia:pick(r,['recorrencia','recorrência'])},0);});
+                const rows=values.slice(1).map(function(row){const r={};headers.forEach(function(h,i){r[h]=row[i]||'';});return r;}).filter(function(r){return Object.values(r).some(Boolean);});
+                const pick=function(r,names){const aliases=names.map(seiNormal);for(const key of Object.keys(r)){if(aliases.includes(seiNormal(key))&&String(r[key]).trim())return r[key];}return '';};
+                const dados=rows.map(function(r){const status=pick(r,['STATUS','SITUAÇÃO']);return aplicarEdicaoHistorico({idProcesso:pick(r,['idProcesso']),idServidor:pick(r,['idServidor']),assessor:pick(r,['ATRIBUIÇÃO','ASSESSOR','RESPONSÁVEL']),recebimento:pick(r,['DATA RECEBIMENTO']),envio:pick(r,['DATA DE ENVIO']),prazo:pick(r,['PRAZO LIMITE PARA ENVIO']),status:status,statusCategoria:categorizarStatus(status),procedencia:pick(r,['PROCEDÊNCIA']),destino:pick(r,['DESTINO']),destinoCategoria:categorizarDestino(pick(r,['DESTINO'])),processo:pick(r,['PROCESSO SEI']),assunto:pick(r,['ASSUNTO']),linhaRef:pick(r,['LINHA DE REFERÊNCIA']),interessados:pick(r,['INTERESSADOS']),recorrencia:pick(r,['RECORRÊNCIA']),cpf:pick(r,['CPF'])},0);});
                 if(!confirm('Foram encontrados '+dados.length+' processos. Substituir o histórico local?'))return;
                 historicoData=dados; gedepStorage.setItem('gedep_processos_cache',JSON.stringify(dados)); aplicarFiltrosColuna(); atualizarSeletorHistoricoSEI(); renderPainelPrazosCaixa(); atualizarOpcoesFluxo(); renderDesenhoFluxo(); seiStatus('Sincronizado: '+dados.length+' processos.'); writeLog('Processos carregados da aba processos.','success');
-            }).catch(function(err){const d=err&&err.result&&err.result.error?(err.result.error.message||('HTTP '+err.result.error.code)):(err.message||String(err));seiStatus('Sheets: '+d,true);writeLog('Falha ao buscar processos: '+d,'error');});
+            }).catch(function(err){const d=err&&err.result&&err.result.error?(err.result.error.message||('HTTP '+err.result.error.code)):(err.message||String(err));seiStatus('Sheets: '+d,true);writeLog('Falha ao buscar processos: '+d,'error');alert('Não foi possível buscar processos: '+d);});
         }
         function seiLogout(){if(seiAccessToken&&window.google&&google.accounts&&google.accounts.oauth2)google.accounts.oauth2.revoke(seiAccessToken);seiAccessToken=null;seiEmail='';if(window.gapi)gapi.client.setToken(null);document.getElementById('btnSeiLogin').style.display='inline-block';document.getElementById('btnSeiSync').style.display='none';document.getElementById('btnSeiLogout').style.display='none';seiStatus('Desconectado.');}
 
@@ -1720,5 +1720,5 @@
         function normalizeText(s) { return String(s == null ? '' : s).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase().replace(/[^A-Z0-9]+/g, ' ').trim(); }
         function escapeHtml(text) { const map = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' }; return String(text).replace(/[&<>"']/g, m => map[m]); }
     </script>
-</body>
+</body>1452
 </html>
