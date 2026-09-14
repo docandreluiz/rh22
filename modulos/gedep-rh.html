@@ -818,26 +818,100 @@
             if (!rhAccessToken) { rhStatus('Faça login antes de buscar dados.', true); return; }
             rhStatus('Buscando servidores, ramais e processos online...');
             const ler=function(range){return Promise.resolve(gapi.client.sheets.spreadsheets.values.get({spreadsheetId:GEDEP_CONFIG.spreadsheetId,range:range}));};
-            Promise.all([ler('servidores!A:Z'),ler('ramais!A:Z'),ler('processos!A:Z')]).then(function(responses){
+            Promise.all([ler('servidores!A:ZZ'),ler('ramais!A:ZZ'),ler('processos!A:ZZ')]).then(function(responses){
                 const serverValues=responses[0].result.values||[], ramalValues=responses[1].result.values||[], processValues=responses[2].result.values||[];
                 if(!serverValues.length) throw new Error('A aba servidores está vazia ou sem cabeçalho.');
                 const serverRaw=rhTabela(serverValues), ramalRaw=rhTabela(ramalValues), processRaw=rhTabela(processValues);
                 const ramaisPorId={}, ramaisPorNome={};
                 ramalRaw.forEach(function(r){const item={idServidor:rhCampo(r,['idServidor']),nome:rhCampo(r,['Nome','nome']),lotacao:rhCampo(r,['Lotação']),sigla:rhCampo(r,['Sigla']),ramal:rhCampo(r,['Ramal'])};if(item.idServidor)ramaisPorId[item.idServidor]=item;if(item.nome)ramaisPorNome[rhNormal(item.nome)]=item;});
-                const records=serverRaw.map(function(raw){const id= rhCampo(raw,['idServidor']) || rhCampo(raw,['id']); const nome=rhCampo(raw,['nome','NOME SERVIDOR']); const ramal=ramaisPorId[id] || ramaisPorNome[rhNormal(nome)]; const record=Object.assign({},raw);record.idServidor=id;record.id=id;record.nome=nome;record.cpf=rhCampo(raw,['cpf']);record.cargo=rhCampo(raw,['cargo']);record.lotacao=rhCampo(raw,['lotacao']);record.fcpeAtual=rhCampo(raw,['fcpeAtual']);record.areaAtual=rhCampo(raw,['areaAtual']);record.statusMinuta=rhCampo(raw,['statusMinuta']);record.fotoUrl=rhCampo(raw,['fotoUrl']);record.whatsappNumero=rhCampo(raw,['whatsappNumero']);record['ID']=id;record['NOME SERVIDOR']=nome;record['CPF']=record.cpf;record['DESC CARGO EFETIVO']=record.cargo;record['CARGO EFETIVO']=record.cargo;record['CARGO COMISSIONADO']=record.fcpeAtual;record['NOME ÓRGÃO']=record.lotacao;record['LOTAÇÃO']=record.lotacao;record['ÁREA']=record.areaAtual;record['STATUS']=record.statusMinuta;record['FOTO URL']=record.fotoUrl;record['WHATSAPP']=record.whatsappNumero;record['RAMAL']=ramal ? ramal.ramal : '';record['SIGLA']=ramal ? ramal.sigla : '';record['LOTAÇÃO RAMAL']=ramal ? ramal.lotacao : record.lotacao;return record;}).filter(function(r){return r.nome;});
+                const records=serverRaw.map(function(raw){const id= rhCampo(raw,['idServidor']) || rhCampo(raw,['id']); const nome=rhCampo(raw,['nome','NOME SERVIDOR']); const ramal=ramaisPorId[id] || ramaisPorNome[rhNormal(nome)]; const record=Object.assign({},raw);record.idServidor=id;record.id=id;record.nome=nome;record.cpf=rhCampo(raw,['cpf']);record.cargo=rhCampo(raw,['cargo']);record.lotacao=rhCampo(raw,['lotacao']);record.fcpeAtual=rhCampo(raw,['fcpeAtual']);record.areaAtual=rhCampo(raw,['areaAtual']);record.statusMinuta=rhCampo(raw,['statusMinuta']);record.fotoUrl=rhCampo(raw,['fotoUrl']);record.whatsappNumero=rhCampo(raw,['whatsappNumero']);record['ID']=id;record['NOME SERVIDOR']=nome;record['CPF']=record.cpf;record['DESC CARGO EFETIVO']=record.cargo;record['CARGO EFETIVO']=record.cargo;record['NOME ÓRGÃO']=record.lotacao;record['LOTAÇÃO']=record.lotacao;record['ÁREA']=record.areaAtual;record['STATUS']=record.statusMinuta;record['FOTO URL']=record.fotoUrl;record['WHATSAPP']=record.whatsappNumero;record['RAMAL']=ramal ? ramal.ramal : '';record['SIGLA']=ramal ? ramal.sigla : '';record['LOTAÇÃO RAMAL']=ramal ? ramal.lotacao : record.lotacao;return record;}).filter(function(r){return r.nome;});
                 const seiProcessos=processRaw.map(function(raw){return {idProcesso:rhCampo(raw,['idProcesso']),idServidor:rhCampo(raw,['idServidor']),processo:rhCampo(raw,['PROCESSO SEI']),interessados:rhCampo(raw,['INTERESSADOS','Interessados']),cpf:rhCampo(raw,['CPF']),assunto:rhCampo(raw,['ASSUNTO']),status:rhCampo(raw,['STATUS']),recebimento:rhCampo(raw,['DATA RECEBIMENTO']),prazo:rhCampo(raw,['PRAZO LIMITE PARA ENVIO']),destino:rhCampo(raw,['DESTINO']),raw:raw};}).filter(function(x){return x.processo||x.interessados;});
                 if(!confirm('Foram encontrados '+records.length+' servidores e '+seiProcessos.length+' processos. Substituir a base local?'))return;
                 appData.records=records;appData.headers=(serverValues[0]||[]).slice();appData.seiProcessos=seiProcessos;filteredRecords=records.slice();processSEILinks();updateAllModules();saveCache();document.getElementById('file-status').innerText=records.length+' servidores, '+seiProcessos.length+' processos (Google Sheets)';rhStatus('Sincronizado pela estrutura oficial: servidores, ramais e processos.');
             }).catch(function(err){const d=err&&err.result&&err.result.error?(err.result.error.message||('HTTP '+err.result.error.code)):(err.message||String(err));rhStatus('Sheets: '+d,true);console.error(err);});
         }
 
+        function rhColuna(index) {
+            let n = index + 1, out = '';
+            while (n > 0) { let r = (n - 1) % 26; out = String.fromCharCode(65 + r) + out; n = Math.floor((n - 1) / 26); }
+            return out;
+        }
+
+        function rhCampoProtegido(nome) {
+            const n = rhNormal(nome);
+            return n === 'fcpe' || n === 'fcpeatual' || n === 'nivel' || n === 'valorfcpe' || n === 'cargocomissionado' || n === 'historico' || n === 'historico-fcpe';
+        }
+
+        function rhValorExportacao(record, header) {
+            const n = rhNormal(header);
+            if (rhCampoProtegido(header)) return undefined;
+            const aliases = {
+                idservidor: ['idServidor','id'], id: ['idServidor','id'], nome: ['nome','NOME SERVIDOR'], cpf: ['cpf','CPF'],
+                cargo: ['cargo','CARGO EFETIVO','DESC CARGO EFETIVO'], cargoefetivo: ['cargo','CARGO EFETIVO','DESC CARGO EFETIVO'],
+                desccargoefetivo: ['cargo','CARGO EFETIVO','DESC CARGO EFETIVO'], lotacao: ['lotacao','LOTAÇÃO','NOME ÓRGÃO','NOME ORGÃO'],
+                unidade: ['lotacao','LOTAÇÃO','NOME ÓRGÃO','NOME ORGÃO'], areaatual: ['areaAtual','ÁREA'], statusminuta: ['statusMinuta','STATUS'],
+                fotofileid: ['fotoFileId'], fotourl: ['fotoUrl','FOTO URL'], whatsappnumero: ['whatsappNumero','WHATSAPP'],
+                atualizadoem: [], atualizadopor: []
+            };
+            if (n === 'atualizadoem') return new Date().toISOString();
+            if (n === 'atualizadopor') return rhEmail;
+            const names = aliases[n];
+            if (names) return rhCampo(record, names);
+            // Campos originais do RH (incluindo dados do RHNet) são preservados/atualizados pelo próprio cabeçalho.
+            const key = Object.keys(record).find(k => rhNormal(k) === n);
+            return key ? record[key] : undefined;
+        }
+
         function rhExportarPlanilha() {
             if (!rhAccessToken) { rhStatus('Faça login antes de exportar.', true); return; }
-            const records=appData.records||[]; if(!records.length){rhStatus('Não há registros carregados para exportar.',true);return;}
-            if(!confirm('Enviar '+records.length+' servidores para a aba servidores?'))return;
-            rhStatus('Preparando exportação em lote...');
-            const ler=function(){return Promise.resolve(gapi.client.sheets.spreadsheets.values.get({spreadsheetId:GEDEP_CONFIG.spreadsheetId,range:'servidores!A:Z'}));};
-            ler().then(function(response){const values=response.result.values||[],headers=values[0]||[];if(!headers.length)throw new Error('A aba servidores está vazia ou sem cabeçalho.');const idCol=headers.findIndex(function(h){return rhNormal(h)==='idservidor';});if(idCol<0)throw new Error('A aba servidores precisa ter a coluna idServidor.');const cpfCol=headers.findIndex(function(h){return rhNormal(h)==='cpf';});const nomeCol=headers.findIndex(function(h){return rhNormal(h)==='nome';});const atuais={},porCpf={},porNome={};values.slice(1).forEach(function(row,i){const linha=i+2,id=String(row[idCol]||'');if(id){atuais[id]=linha;if(cpfCol>=0&&row[cpfCol])porCpf[String(row[cpfCol]).replace(/\D/g,'')]=id;if(nomeCol>=0&&row[nomeCol])porNome[rhNormal(row[nomeCol])]=id;}});const gerarId=function(r){const cpf=String(r.cpf||r.CPF||'').replace(/\D/g,'');const nome=r.nome||r['NOME SERVIDOR']||'';return (cpf&&porCpf[cpf])||porNome[rhNormal(nome)]||('srv_'+(cpf||rhNormal(nome).slice(0,30)));};const campo=function(r,n){const id=gerarId(r);r.idServidor=id;r.id=id;const campoPorCabecalho={idservidor:id,id:id,nome:r.nome||r['NOME SERVIDOR']||'',cpf:r.cpf||r.CPF||'',cargo:r.cargo||r['CARGO EFETIVO']||'',lotacao:r.lotacao||r['LOTAÇÃO']||'',fcpeatual:r.fcpeAtual||r['CARGO COMISSIONADO']||'',areaatual:r.areaAtual||r['ÁREA']||'',statusminuta:r.statusMinuta||r.STATUS||'',fotofileid:r.fotoFileId||'',fotourl:r.fotoUrl||r['FOTO URL']||'',whatsappnumero:r.whatsappNumero||r.WHATSAPP||'',atualizadoem:new Date().toISOString(),atualizadopor:rhEmail};return campoPorCabecalho[n]===undefined?'':campoPorCabecalho[n];};const updates=[],novos=[];records.forEach(function(r){const id=gerarId(r);const linha=headers.map(function(h){return campo(r,rhNormal(h));});if(atuais[id])updates.push({range:'servidores!A'+atuais[id]+':N'+atuais[id],values:[linha]});else novos.push(linha);});if(!updates.length&&!novos.length)throw new Error('Não há registros para salvar.');let promise=Promise.resolve();if(updates.length)promise=promise.then(function(){return gapi.client.sheets.spreadsheets.values.batchUpdate({spreadsheetId:GEDEP_CONFIG.spreadsheetId,resource:{valueInputOption:'USER_ENTERED',data:updates}});});if(novos.length)promise=promise.then(function(){return gapi.client.sheets.spreadsheets.values.append({spreadsheetId:GEDEP_CONFIG.spreadsheetId,range:'servidores!A:N',valueInputOption:'USER_ENTERED',insertDataOption:'INSERT_ROWS',resource:{values:novos}});});return promise.then(function(){return{u:updates.length,n:novos.length};});}).then(function(r){rhStatus('Exportação concluída: '+r.n+' incluídos e '+r.u+' atualizados.');alert('Exportação concluída.\nIncluídos: '+r.n+'\nAtualizados: '+r.u);}).catch(function(err){const d=err&&err.result&&err.result.error?(err.result.error.message||('HTTP '+err.result.error.code)):(err.message||String(err));rhStatus('Sheets: '+d,true);alert('Não foi possível exportar: '+d);});
+            const records = appData.records || [];
+            if (!records.length) { rhStatus('Não há registros carregados para exportar.', true); return; }
+            if (!confirm('Enviar ' + records.length + ' servidores para a aba servidores? Os campos de FCPE serão preservados.')) return;
+            rhStatus('Preparando exportação segura em lote...');
+            Promise.resolve(gapi.client.sheets.spreadsheets.values.get({spreadsheetId: GEDEP_CONFIG.spreadsheetId, range: 'servidores!A:ZZ'}))
+                .then(function(response) {
+                    const values = response.result.values || [], headers = values[0] || [];
+                    if (!headers.length) throw new Error('A aba servidores está vazia ou sem cabeçalho.');
+                    const idCol = headers.findIndex(h => rhNormal(h) === 'idservidor');
+                    if (idCol < 0) throw new Error('A aba servidores precisa ter a coluna idServidor.');
+                    const cpfCol = headers.findIndex(h => rhNormal(h) === 'cpf');
+                    const nomeCol = headers.findIndex(h => rhNormal(h) === 'nome');
+                    const atuais = {}, porCpf = {}, porNome = {};
+                    values.slice(1).forEach(function(row, i) {
+                        const linha = i + 2, id = String(row[idCol] || '');
+                        if (id) atuais[id] = {linha: linha, row: row.slice()};
+                        if (cpfCol >= 0 && row[cpfCol]) porCpf[String(row[cpfCol]).replace(/\D/g, '')] = id;
+                        if (nomeCol >= 0 && row[nomeCol]) porNome[rhNormal(row[nomeCol])] = id;
+                    });
+                    const gerarId = function(r) {
+                        const cpf = String(r.cpf || r.CPF || '').replace(/\D/g, ''), nome = r.nome || r['NOME SERVIDOR'] || '';
+                        return (cpf && porCpf[cpf]) || porNome[rhNormal(nome)] || rhIdServidor(r) || ('srv_' + (cpf || rhNormal(nome).slice(0, 30)));
+                    };
+                    const updates = [], novos = [];
+                    records.forEach(function(record) {
+                        const id = gerarId(record), atual = atuais[id], row = atual ? atual.row.slice() : [];
+                        while (row.length < headers.length) row.push('');
+                        headers.forEach(function(header, col) {
+                            const val = rhValorExportacao(Object.assign({}, record, {idServidor: id, id: id}), header);
+                            // undefined significa campo protegido: mantém exatamente o valor atual.
+                            if (val !== undefined) row[col] = val;
+                        });
+                        if (atual) updates.push({range: 'servidores!A' + atual.linha + ':' + rhColuna(headers.length - 1) + atual.linha, values: [row]});
+                        else novos.push(row);
+                    });
+                    let promise = Promise.resolve();
+                    if (updates.length) promise = promise.then(() => gapi.client.sheets.spreadsheets.values.batchUpdate({spreadsheetId: GEDEP_CONFIG.spreadsheetId, resource: {valueInputOption: 'USER_ENTERED', data: updates}}));
+                    if (novos.length) promise = promise.then(() => gapi.client.sheets.spreadsheets.values.append({spreadsheetId: GEDEP_CONFIG.spreadsheetId, range: 'servidores!A:' + rhColuna(headers.length - 1), valueInputOption: 'USER_ENTERED', insertDataOption: 'INSERT_ROWS', resource: {values: novos}}));
+                    return promise.then(() => ({u: updates.length, n: novos.length}));
+                })
+                .then(function(result) {
+                    rhStatus('Exportação segura concluída: ' + result.n + ' incluídos e ' + result.u + ' atualizados. Campos de FCPE preservados.');
+                    alert('Exportação concluída.\nIncluídos: ' + result.n + '\nAtualizados: ' + result.u + '\n\nOs campos de FCPE foram preservados.');
+                })
+                .catch(function(err) {
+                    const d = err && err.result && err.result.error ? (err.result.error.message || ('HTTP ' + err.result.error.code)) : (err.message || String(err));
+                    rhStatus('Sheets: ' + d, true); alert('Não foi possível exportar: ' + d);
+                });
         }
 
         function rhExportarRamaisPlanilha() {
