@@ -191,6 +191,7 @@
                             <option value="Encerrada">Encerrada</option>
                         </select>
                         <button type="button" onclick="aplicarStatusMassaFCPE()" class="bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-1.5 rounded text-xs font-semibold">Aplicar à lista</button>
+                        <button type="button" onclick="limparListaLocalFCPE()" class="bg-amber-600 hover:bg-amber-700 text-white px-3 py-1.5 rounded text-xs font-semibold">Limpar lista local</button>
                     </div>
                 </div>
                 <div class="overflow-x-auto">
@@ -668,6 +669,14 @@
             if (campo) campo.value = '';
             salvarDados();
             alert('Status atualizado para ' + lista.length + ' servidores. Clique em Gravar lista FCPE para enviar à planilha.');
+        }
+
+        function limparListaLocalFCPE() {
+            if (!confirm('Isso removerá os servidores apenas deste HTML. A planilha não será apagada. Deseja continuar?')) return;
+            appData.servidores = [];
+            appData.lancamentos = [];
+            salvarDados();
+            alert('Lista local limpa. A planilha permaneceu intacta.');
         }
 
         function atualizarEstatisticas() {
@@ -1507,6 +1516,6 @@
         window.onload = function() {
             carregarDados();
         };
-    </script>1545
+    </script>
 </body>
 </html>
