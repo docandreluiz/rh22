@@ -1,0 +1,980 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Buscador Diário Oficial & Hub GEDEP (v45.8 - Corrigido)</title>
+    <!-- RASTREADOR DE ERROS GLOBAL -->
+    <script>
+        window.onerror = function(message, source, lineno, colno, error) {
+            const errorMsg = `ERRO FATAL NA PÁGINA:\n\nMensagem: ${message}\nArquivo: ${source}\nLinha: ${lineno}\n\nO SCRIPT FOI INTERROMPIDO.`;
+            alert(errorMsg); console.error(errorMsg); return false;
+        };
+        window.onunhandledrejection = function(event) {
+            const errorMsg = `ERRO DE PROCESSAMENTO (PROMISE):\n\nMotivo: ${event.reason}`;
+            alert(errorMsg); console.error(errorMsg);
+        };
+    </script>
+    <!-- BIBLIOTECAS EXTERNAS -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <style>
+        :root {
+            --primary: #1e3a8a;
+            --secondary: #3b82f6;
+            --bg-color: #f4f6f8;
+            --card-bg: #ffffff;
+            --text-color: #1e293b;
+            --border-color: #cbd5e1;
+            --success: #10b981;
+            --warning: #d97706;
+        }
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; max-width: 1300px; margin: 20px auto; padding: 20px; background-color: var(--bg-color); color: var(--text-color); }
+        h1, h3, h4 { color: #2c3e50; margin-top: 0; }
+        .nav-tabs { display: flex; border-bottom: 2px solid #ccc; margin-bottom: 20px; flex-wrap: wrap; gap: 5px; }
+        .tab-btn { padding: 10px 20px; font-weight: bold; border: none; background: none; cursor: pointer; font-size: 15px; color: #7f8c8d; border-bottom: 3px solid transparent; transition: all 0.2s; }
+        .tab-btn.active { color: #2c3e50; border-bottom-color: #3498db; background-color: #fff; border-radius: 6px 6px 0 0; }
+        .tab-content { display: none; } .tab-content.active { display: block; }
+        .card { background: var(--card-bg); padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); margin-bottom: 20px; border: 1px solid var(--border-color); }
+        .action-bar { margin: 15px 0; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+        .btn { border: none; padding: 10px 16px; border-radius: 6px; cursor: pointer; font-size: 14px; font-weight: bold; transition: background 0.2s; }
+        .btn-pdf { background-color: #e74c3c; color: white; } .btn-zip { background-color: #d35400; color: white; } .btn-excel { background-color: #27ae60; color: white; } .btn-nominal { background-color: #2c3e50; color: white; } .btn-log { background-color: #7f8c8d; color: white; } .btn-clear { background-color: #c0392b; color: white; } .btn-view { background-color: #2980b9; color: white; margin-left: 5px; } .btn-sm { padding: 5px 10px; font-size: 12px; }
+        .badge { display: inline-block; background-color: #eef2f7; color: #34495e; padding: 6px 12px; border-radius: 20px; font-size: 13px; font-weight: 600; border: 1px solid #dcdfe6; }
+        textarea, select, input[type="text"], input[type="date"] { width: 100%; padding: 9px; border-radius: 6px; border: 1px solid #ccc; font-family: inherit; font-size: 13px; box-sizing: border-box; margin-top: 5px; }
+        textarea { height: 90px; resize: vertical; }
+        .log-container { background-color: #1e1e1e; color: #00ff66; font-family: 'Consolas', Courier, monospace; font-size: 13px; padding: 15px; border-radius: 6px; height: 450px; overflow-y: auto; white-space: pre-wrap; border: 1px solid #333; margin-top: 10px; box-shadow: inset 0 0 10px rgba(0,0,0,0.5); }
+        .log-entry { margin-bottom: 4px; border-bottom: 1px dashed #333; padding-bottom: 2px; }
+        .log-warn { color: #f1c40f; } .log-error { color: #ff4d4d; font-weight: bold; background-color: rgba(255,0,0,0.2); padding: 2px 4px; border-radius: 3px; } .log-info { color: #3498db; } .log-success { color: #2ecc71; font-weight: bold; } .log-debug { color: #a5b1c2; }
+        .result-card { background: #fff; border-left: 5px solid #27ae60; padding: 15px; margin-bottom: 15px; border-radius: 6px; box-shadow: 0 2px 4px rgba(0,0,0,0.08); display: flex; align-items: flex-start; gap: 15px; }
+        .result-card input[type="checkbox"] { margin-top: 4px; width: 18px; height: 18px; cursor: pointer; }
+        .status-msg { font-weight: bold; font-size: 14px; margin-top:10px; display:inline-block; } .success { color: #27ae60; } .loading { color: #e67e22; } .error { color: #e74c3c; }
+        .snippet-box { background-color: #f8f9fa; border: 1px solid #e2e8f0; border-left: 4px solid #27ae60; padding: 12px 14px; font-family: monospace; font-size: 13px; margin-top: 10px; border-radius: 4px; line-height: 1.6; word-break: break-word; color: #333; }
+        .modal { display: none; position: fixed; z-index: 1000; left: 0; top: 0; width: 100%; height: 100%; background-color: rgba(0,0,0,0.7); justify-content: center; align-items: center; }
+        .modal-content { background-color: #fff; padding: 20px; border-radius: 8px; width: 85%; height: 90%; display: flex; flex-direction: column; }
+        .canvas-container { flex: 1; overflow: auto; background: #525659; text-align: center; padding: 20px; }
+        #pdfCanvas { border: 1px solid #ccc; background: white; box-shadow: 0 4px 8px rgba(0,0,0,0.3); }
+        #bulk-actions { background-color: #eef2f7; border: 1px solid #dcdfe6; border-left: 5px solid #3498db; padding: 12px 16px; border-radius: 6px; margin-bottom: 15px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+        .table-responsive { max-height: 450px; overflow: auto; border: 1px solid #e2e8f0; border-radius: 6px; margin-top: 10px; background: #fff; }
+        table { width: 100%; border-collapse: collapse; font-size: 12px; white-space: nowrap; }
+        th, td { border: 1px solid #e2e8f0; padding: 8px 12px; text-align: left; }
+        th { background-color: #1f4e78; color: white; position: sticky; top: 0; z-index: 10; }
+        .form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 15px; margin-top: 10px; }
+
+        .conf-badge { display:inline-block; padding:3px 9px; border-radius:12px; font-size:11px; font-weight:700; letter-spacing:.3px; margin-left:6px; }
+        .conf-exato { background:#d5f5e3; color:#1e8449; border:1px solid #a9dfbf; }
+        .hit-row { border-top:1px dashed #e2e8f0; padding-top:8px; margin-top:8px; }
+        .hit-row:first-child { border-top:none; padding-top:0; margin-top:0; }
+        .snippet-box mark { background:#ffe066; padding:0 2px; border-radius:2px; }
+        .progress-wrap { background:#e9ecef; border-radius:10px; height:10px; overflow:hidden; margin-top:10px; display:none; }
+        .progress-bar { height:100%; width:0%; background:#3498db; transition:width .15s linear; }
+        #coverage-report { display:none; }
+        #coverage-report table { white-space:normal; }
+
+        .grid-templates { display: grid; grid-template-columns: 1fr; gap: 20px; }
+        .card-template { background: #ffffff; border: 1px solid var(--border-color); border-radius: 8px; padding: 20px; box-shadow: 0 2px 5px rgba(0,0,0,0.02); transition: transform 0.2s, box-shadow 0.2s; }
+        .card-template:hover { box-shadow: 0 4px 10px rgba(0,0,0,0.08); }
+        .card-template h3 { margin-top: 0; color: var(--secondary); font-size: 16px; display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+        .btn-acao { background-color: var(--primary); color: white; border: none; padding: 8px 16px; border-radius: 6px; cursor: pointer; font-weight: 600; font-size: 13px; margin-top: 10px; transition: background-color 0.2s; display: inline-flex; align-items: center; gap: 6px; }
+        .btn-acao:hover { background-color: #1e293b; }
+        .btn-acao.copied { background-color: var(--success); }
+        .tag-risco { font-size: 11px; padding: 3px 8px; border-radius: 4px; font-weight: bold; text-transform: uppercase; }
+        .baixo { background: #e2e8f0; color: #475569; }
+        .medio { background: #fef3c7; color: #92400e; }
+        .alto { background: #fee2e2; color: #991b1b; }
+    </style>
+    <script src="../gedep-storage.js"></script>
+</head>
+
+    <a href="../index.html" aria-label="Voltar ao Hub GEDEP" style="position:fixed;right:14px;bottom:14px;z-index:99999;background:#0f172a;color:#fff;text-decoration:none;padding:9px 13px;border-radius:8px;border:1px solid #334155;font:600 12px Arial;box-shadow:0 4px 12px rgba(0,0,0,.18);">← Hub GEDEP</a>
+<body>
+
+    <h1><a href="https://diariooficial.abc.go.gov.br/" target="_blank" style="text-decoration: none; color: #2c3e50;">Pesquisa Diário Oficial & Hub GEDEP</a> <span style="font-size: 14px; color: #7f8c8d;">(v45.8 - Buscador Restaurado)</span></h1>
+    
+    <div class="nav-tabs">
+        <button class="tab-btn active" onclick="switchTab('tab-busca')">🔍 Buscador Principal</button>
+        <button class="tab-btn" onclick="switchTab('tab-extracao')">📊 Extração e Segmentação</button>
+        <button class="tab-btn" onclick="switchTab('tab-despachos')">📝 Hub Central & Despachos SEI</button>
+        <button class="tab-btn" onclick="switchTab('tab-logs')">📋 Console de Logs</button>
+    </div>
+
+    <!-- ABA 1: BUSCADOR -->
+    <div id="tab-busca" class="tab-content active">
+        <div class="card">
+            <label><strong>1. Entrada de Arquivos e Listas de Busca:</strong></label>
+            <input type="file" id="pdfInput" accept="application/pdf" style="display: none;" onchange="handlePdfUpload(event)">
+            <input type="file" id="zipInput" accept=".zip" style="display: none;" onchange="handleZipUpload(event)">
+            <input type="file" id="excelInput" accept=".xlsx, .xls" style="display: none;" onchange="handleExcelUpload(event)">
+            <div class="action-bar">
+                <button class="btn btn-pdf" onclick="document.getElementById('pdfInput').click()">📄 Carregar PDF do D.O.</button>
+                <button class="btn btn-zip" onclick="document.getElementById('zipInput').click()">📦 Carregar Pacote ZIP (.txt)</button>
+                <button class="btn btn-excel" onclick="document.getElementById('excelInput').click()">📊 Carregar Excel (.XLSX)</button>
+                <button class="btn btn-clear" onclick="clearSavedTargets()">🗑️ Limpar Memória</button>
+                <span id="dataBadge" class="badge">Aguardando dados...</span>
+            </div>
+            <div style="margin-top: 15px;">
+                <label for="manualTerms"><strong>2. Digite ou Cole Nomes/Termos Específicos (separados por linha):</strong></label>
+                <textarea id="manualTerms" placeholder="Exemplo:&#10;João da Silva&#10;Maria de Souza"></textarea>
+            </div>
+
+            <!-- Filtros de Exclusão por Coluna -->
+            <div style="background-color: #fafbfc; padding: 15px; border-radius: 6px; margin-top: 15px; border: 1px solid #e1e4e8;">
+                <div style="font-weight: bold; margin-bottom: 8px; color: #2c3e50; font-size: 13px;">
+                    🎯 Filtros de Exclusão por Coluna (Linha 2 como Título):
+                </div>
+                <div id="exclude-columns-checkboxes" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 8px; max-height: 150px; overflow-y: auto; background: #fff; padding: 10px; border: 1px solid #d1d5db; border-radius: 4px;">
+                    <span style="color: #7f8c8d; font-style: italic; font-size: 12px;">Carregue um arquivo ZIP ou Excel para listar os títulos...</span>
+                </div>
+                <div style="margin-top: 10px;">
+                    <label style="font-size: 12px; font-weight: 600;">Termos / Palavras Adicionais para Excluir:</label>
+                    <input type="text" id="filter-exclude-words" placeholder="Ex: SECRETARIA, DIRETORIA" style="margin-top: 3px; font-size: 12px;">
+                </div>
+            </div>
+
+            <span id="statusMsg" class="status-msg"></span>
+            
+            <div style="background-color: #f8f9fa; padding: 12px; border-radius: 6px; margin-top: 15px; border: 1px solid #e9ecef;">
+                <strong>Modo de Varredura:</strong>
+                <label style="margin-left: 15px;"><input type="radio" name="nominalMode" value="both" checked> Nome, CPF e Termos</label>
+                <label style="margin-left: 15px;"><input type="radio" name="nominalMode" value="name"> Apenas Nomes / Termos</label>
+                <label style="margin-left: 15px;"><input type="radio" name="nominalMode" value="cpf"> Apenas CPF</label>
+                <br><br>
+                <button class="btn btn-nominal" onclick="performNominalSearch()">🔍 Executar Varredura (Apenas Exatos)</button>
+            </div>
+        </div>
+        
+        <div id="bulk-actions" style="display:none;">
+            <strong style="color: #2c3e50; margin-right: 10px;">🛠️ Ações em Lote:</strong>
+            <div style="display: flex; gap: 10px; align-items: center; border-left: 2px solid #ccc; padding-left: 10px;">
+                <label>Data D.O.: <input type="text" id="diarioDate" placeholder="dd/mm/aaaa" style="width: 120px;"></label>
+                <label><input type="checkbox" id="isSuplemento"> Suplemento</label>
+                <button class="btn btn-sm btn-log" onclick="copySelectedText()">📋 Copiar Texto Selecionado</button>
+            </div>
+        </div>
+        
+        <div class="progress-wrap" id="progressWrap"><div class="progress-bar" id="progressBar"></div></div>
+        <div class="card" id="coverage-report">
+            <h3>📋 Relatório de cobertura</h3>
+            <div id="coverageSummary"></div>
+            <div class="table-responsive" id="coverageTableWrap"></div>
+        </div>
+        <div id="results"></div>
+    </div>
+    
+    <!-- ABA 2: EXTRAÇÃO E SEGMENTAÇÃO -->
+    <div id="tab-extracao" class="tab-content">
+        <div class="card">
+            <h3>📊 Extrator e Transformador de TXT em Planilha Excel</h3>
+            <div style="display: flex; gap: 20px; flex-wrap: wrap; margin-top: 15px;">
+                <div style="flex: 1; min-width: 300px;">
+                    <label><strong>1. Escolha o Arquivo do Pacote ZIP / TXT:</strong></label>
+                    <select id="zipFileSelect" onchange="onZipFileSelected()">
+                        <option value="">-- Carregue um arquivo ZIP ou TXT primeiro --</option>
+                    </select>
+                </div>
+                <div style="flex: 1; min-width: 300px;">
+                    <label><strong>Configuração do Cabeçalho:</strong></label>
+                    <select id="headerConfig" onchange="onZipFileSelected()">
+                        <option value="line4">Dados iniciam a partir da Linha 4 (Linha 2 usada como Título)</option>
+                        <option value="line1">Usar Linha 1 como Início</option>
+                    </select>
+                </div>
+            </div>
+            <div class="action-bar" style="margin-top: 20px;">
+                <button class="btn btn-nominal" onclick="processAndRenderMatrix()">Processar e Renderizar Planilha</button>
+            </div>
+        </div>
+        <div class="card">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                <h3>Matriz de Dados Transformada</h3>
+                <button class="btn btn-excel" onclick="downloadTransformedExcel()">📥 Baixar Planilha (.xlsx)</button>
+            </div>
+            <div class="table-responsive" id="transformedMatrixContainer">
+                <table id="transformedTable">
+                    <thead><tr><th>AGUARDANDO PROCESSAMENTO</th></tr></thead>
+                    <tbody><tr><td>Nenhum dado processado ainda.</td></tr></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- ABA 3: HUB CENTRAL & DESPACHOS SEI -->
+    <div id="tab-despachos" class="tab-content">
+        <div class="card">
+            <h3>📝 Hub Central & Preenchimento Inteligente de Despachos SEI</h3>
+            <p style="color: #64748b; font-size: 14px; margin-bottom: 20px;">Selecione um funcionário, defina o usuário, assinante e prazos, extraia os dados do SEI e utilize os templates.</p>
+
+            <div class="form-grid" style="margin-bottom: 20px;">
+                <div style="background: #f8fafc; padding: 15px; border-radius: 8px; border: 1px solid var(--border-color);">
+                    <label style="font-weight: bold; color: var(--primary);">1. Selecionar Funcionário / Interessado:</label>
+                    <select id="selectServidorMemoria" onchange="preencherDadosServidor()" style="margin-top: 6px;">
+                        <option value="">-- Carregue dados na Aba 1 (ZIP/Excel) para listar --</option>
+                    </select>
+                    
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 8px;">
+                        <div>
+                            <label style="font-size: 11px; font-weight: bold;">Interessado / Servidor:</label>
+                            <input type="text" id="inputNomeAuto" placeholder="Nome do servidor" style="font-size: 12px;">
+                        </div>
+                        <div>
+                            <label style="font-size: 11px; font-weight: bold;">CPF:</label>
+                            <input type="text" id="inputCpfAuto" placeholder="CPF do servidor" style="font-size: 12px;">
+                        </div>
+                    </div>
+
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 8px;">
+                        <div>
+                            <label style="font-size: 11px; font-weight: bold;">Usuário:</label>
+                            <input type="text" id="inputUsuario" placeholder="Nome do usuário" style="font-size: 12px;">
+                        </div>
+                        <div>
+                            <label style="font-size: 11px; font-weight: bold;">Cargo do Usuário:</label>
+                            <input type="text" id="inputCargoUsuario" placeholder="Cargo do usuário" style="font-size: 12px;">
+                        </div>
+                    </div>
+
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 8px;">
+                        <div>
+                            <label style="font-size: 11px; font-weight: bold;">Assinante:</label>
+                            <input type="text" id="inputAssinante" placeholder="Nome do assinante" style="font-size: 12px;">
+                        </div>
+                        <div>
+                            <label style="font-size: 11px; font-weight: bold;">Cargo do Assinante:</label>
+                            <input type="text" id="inputCargoAssinante" placeholder="Cargo do assinante" style="font-size: 12px;">
+                        </div>
+                    </div>
+
+                    <div style="margin-top: 8px;">
+                        <label style="font-size: 11px; font-weight: bold;">Prazo Máximo para Envío:</label>
+                        <select id="selectPrazo" onchange="togglePrazoCustom()" style="font-size: 12px; font-weight: bold;">
+                            <option value="10 dias úteis">10 dias úteis</option>
+                            <option value="outro">Outro prazo (digitar)</option>
+                        </select>
+                        <input type="text" id="inputPrazoCustom" placeholder="Digite o prazo personalizado..." style="font-size: 12px; margin-top: 5px; display: none;">
+                    </div>
+                </div>
+
+                <div style="background: #eff6ff; padding: 15px; border-radius: 8px; border: 2px dashed var(--secondary);">
+                    <label style="font-weight: bold; color: var(--primary);">2. Extrator de Metadados do SEI:</label>
+                    <textarea id="textoBrutoSEI" placeholder="Cole aqui o texto bruto da tela do SEI..." style="height: 60px; margin-top: 6px;"></textarea>
+                    <button class="btn btn-sm btn-nominal" onclick="processarDadosSEI()" style="margin-top: 6px;">⚡ Extrair Metadados do Documento</button>
+                    
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 6px;">
+                        <div>
+                            <label style="font-size: 11px; font-weight: bold;">Título do Documento:</label>
+                            <input type="text" id="inputTituloDocAuto" placeholder="Ex: Despacho nº 4.465" style="font-size: 11px; font-weight: bold; color: #1e3a8a;">
+                        </div>
+                        <div>
+                            <label style="font-size: 11px; font-weight: bold;">Órgão Emissor:</label>
+                            <input type="text" id="inputOrgaoAuto" placeholder="Ex: CBM/SG-PROTOCOLO" style="font-size: 11px; font-weight: bold; color: #27ae60;">
+                        </div>
+                    </div>
+
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 6px;">
+                        <div>
+                            <label style="font-size: 11px; font-weight: bold;">Nº do Processo:</label>
+                            <input type="text" id="inputProcessoAuto" placeholder="Ex: 202600005025829" style="font-size: 11px; font-weight: bold;">
+                        </div>
+                        <div>
+                            <label style="font-size: 11px; font-weight: bold;">Nº do Documento (SEI):</label>
+                            <input type="text" id="inputSeiDocAuto" placeholder="Ex: 94357852" style="font-size: 11px; font-weight: bold;">
+                        </div>
+                    </div>
+                    <div style="margin-top: 6px;">
+                        <label style="font-size: 11px; font-weight: bold;">Assunto / Objeto:</label>
+                        <input type="text" id="inputAssuntoAuto" placeholder="Assunto detectado" style="font-size: 12px;">
+                    </div>
+                </div>
+            </div>
+
+            <div style="background-color: #eef2f7; padding: 12px 16px; border-radius: 6px; margin-bottom: 20px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px;">
+                <span style="font-size: 13px; font-weight: bold; color: #2c3e50;">💡 Preencha os campos e clique para injetar e registrar na tabela de controle!</span>
+                <button class="btn btn-sm btn-excel" onclick="aplicarDadosEmTodosTemplates()">🔄 Injetar Dados e Registrar</button>
+            </div>
+
+            <hr style="border: 0; border-top: 1px solid var(--border-color); margin: 20px 0;">
+
+            <h2 style="color: var(--primary); font-size: 18px; margin-bottom: 15px;">📝 Repositório de Despachos Padronizados</h2>
+
+            <div class="grid-templates">
+                <div class="card-template" style="border-left: 5px solid var(--primary);">
+                    <h3>1. Encaminhamento Padrão Customizado <span class="tag-risco baixo">Baixo Risco</span></h3>
+                    
+                    <div style="background: #eef2f7; padding: 14px; border-radius: 8px; margin-bottom: 15px; border: 1px solid #cbd5e1;">
+                        <label style="font-size: 13px; font-weight: bold; color: var(--primary); display: block; margin-bottom: 5px;">
+                            📌 Selecione a Unidade de Destino para Encaminhamento:
+                        </label>
+                        <select id="selectSetorDestino" onchange="atualizarTemplate1()" style="font-weight: bold; color: #1e3a8a; background: #ffffff; padding: 10px; font-size: 13px;">
+                            <option value="Folha de Pagamento">Folha de Pagamento</option>
+                            <option value="Apoio Técnico e Gerenciamento de Dados">Apoio Técnico e Gerenciamento de Dados</option>
+                            <option value="Controle de Frequência e Férias">Controle de Frequência e Férias</option>
+                            <option value="Direitos e Benefícios">Direitos e Benefícios</option>
+                            <option value="Assistência ao Servidor">Assistência ao Servidor</option>
+                            <option value="Diárias">Diárias</option>
+                            <option value="Gerência de Patrimônio">Gerência de Patrimônio</option>
+                            <option value="Gerência de Tecnologia">Gerência de Tecnologia</option>
+                            <option value="Gerência de Apoio Logístico">Gerência de Apoio Logístico</option>
+                            <option value="Segurança do Trabalho">Segurança do Trabalho</option>
+                            <option value="Planejamento e Desenvolvimento Pessoal">Planejamento e Desenvolvimento Pessoal</option>
+                        </select>
+                    </div>
+
+                    <textarea id="t1" class="template-box" style="height: 140px;">Trata-se do [TituloDoc] ([SeiDocumento]), da [OrgaoEmissor], que versa sobre [Assunto].
+
+Encaminhem-se os autos aos setores [SetorDestino] para providências.
+
+Encaminhe-se o presente processo nº [Processo] (SEI nº [SeiDocumento]), referente ao servidor(a) [Nome] (CPF nº [Cpf]), com assunto "[Assunto]", para análise técnica e manifestação conclusiva, tendo em vista a verificação preliminar de conformidade procedimental realizada por esta GEDEP.
+
+Atenciosamente,</textarea>
+                    <button class="btn-acao" onclick="copiarTextoHub('t1', this)">Copiar Texto</button>
+                </div>
+
+                <div class="card-template">
+                    <h3>2. Devolução por Diligência / Correção de Instrução <span class="tag-risco medio">Médio Risco</span></h3>
+                    <textarea id="t2" class="template-box">Ao setor de origem,
+
+Retorne o presente processo nº [Processo] (SEI nº [SeiDocumento] - Interessado: [Nome] - CPF: [Cpf]) para saneamento da instrução processual, sendo necessária a complementação dos seguintes documentos/informações: 
+[ESPECIFICAR AQUI O QUE FALTA], no prazo de 5 (cinco) dias úteis, conforme normas de regência.
+
+Atenciosamente,</textarea>
+                    <button class="btn-acao" onclick="copiarTextoHub('t2', this)">Copiar Texto</button>
+                </div>
+
+                <div class="card-template">
+                    <h3>3. Remessa para Instância Superior (Blindagem Hierárquica) <span class="tag-risco alto">Alto Risco</span></h3>
+                    <textarea id="t3" class="template-box">À consideração superior,
+
+Encaminhamos o processo nº [Processo] (SEI nº [SeiDocumento]), relativo ao servidor(a) [Nome] (CPF: [Cpf]), devidamente instruído, acompanhado de nota técnica/minuta de despacho fundamentada, para apreciação e eventual deliberação por essa autoridade superior, em observância aos limites de competência estabelecidos.
+
+Atenciosamente,</textarea>
+                    <button class="btn-acao" onclick="copiarTextoHub('t3', this)">Copiar Texto</button>
+                </div>
+
+                <div class="card-template">
+                    <h3>4. Conclusão e Arquivamento por Cumprimento de Objeto <span class="tag-risco baixo">Baixo Risco</span></h3>
+                    <textarea id="t4" class="template-box">À unidade de arquivamento,
+
+Certificamos que o objeto do processo nº [Processo] (SEI nº [SeiDocumento]), referente a [Nome] (CPF: [Cpf]), foi integralmente cumprido, não havendo pendências remanescentes sob a tutela desta GEDEP. Sendo assim, propõe-se o arquivamento do feito, nos termos da regulamentação aplicável.
+
+Atenciosamente,</textarea>
+                    <button class="btn-acao" onclick="copiarTextoHub('t4', this)">Copiar Texto</button>
+                </div>
+
+                <div class="card-template">
+                    <h3>5. Pedido de Prorrogação de Prazo <span class="tag-risco medio">Médio Risco</span></h3>
+                    <textarea id="t5" class="template-box">À autoridade solicitante,
+
+Diante do volume de demandas e da complexidade técnica que envolve a análise do processo nº [Processo] (SEI nº [SeiDocumento] - Servidor(a): [Nome] - CPF: [Cpf]), solicitamos a prorrogação do prazo limite de atendimento por mais [INSERIR DIAS] dias, a contar do vencimento original.
+
+Atenciosamente,</textarea>
+                    <button class="btn-acao" onclick="copiarTextoHub('t5', this)">Copiar Texto</button>
+                </div>
+            </div>
+
+            <!-- TABELA DE REGISTRO -->
+            <div class="card" style="margin-top: 30px; border: 2px solid var(--primary);">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                    <h3 style="color: var(--primary); margin:0;">📋 Tabela de Controle e Registro de Despachos</h3>
+                    <button class="btn btn-sm btn-clear" onclick="limparTabelaRegistro()">🗑️ Limpar Tabela</button>
+                </div>
+                <div class="table-responsive">
+                    <table id="tabelaRegistroDespacho">
+                        <thead>
+                            <tr>
+                                <th>usuario</th>
+                                <th>DATA da utilização</th>
+                                <th></th>
+                                <th>PRAZO maximo PARA ENVIO</th>
+                                <th>STATUS</th>
+                                <th>PROCEDÊNCIA</th>
+                                <th>DESTINO</th>
+                                <th>PROCESSO SEI</th>
+                                <th>ASSUNTO</th>
+                                <th></th>
+                                <th>Interessados</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr id="linhaVaziaTabela">
+                                <td colspan="11" style="text-align: center; color: #7f8c8d; font-style: italic;">Nenhum registro adicionado ainda. Clique em "Injetar Dados e Registrar".</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+        </div>
+    </div>
+
+    <!-- ABA 4: LOGS DO SISTEMA -->
+    <div id="tab-logs" class="tab-content">
+        <div class="card">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                <h3>📋 Console de Logs e Monitoramento (v45.8)</h3>
+                <button class="btn btn-sm btn-clear" onclick="document.getElementById('logConsole').innerHTML='=== Console Limpo ==='">🗑️ Limpar Logs</button>
+            </div>
+            <div id="logConsole" class="log-container">=== Monitoramento Iniciado (Versão 45.8) ===</div>
+        </div>
+    </div>
+
+    <!-- MODAL PDF VIEWER -->
+    <div id="pdfModal" class="modal">
+        <div class="modal-content">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                <h4 id="modalTitle">Visualizador de Página do PDF</h4>
+                <button class="btn btn-sm btn-clear" onclick="closeModal()">Fechar ✕</button>
+            </div>
+            <div class="canvas-container">
+                <canvas id="pdfCanvas"></canvas>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const APP_VERSION = "v45.8";
+        let targetList = [], excelTargetList = [], currentPdfDoc = null, currentPdfArrayBuffer = null;
+        let loadedZipFilesMap = {}, lastProcessedMatrix = [], globalHeaders = [];
+
+        function writeLog(msg, type = 'normal') {
+            const consoleDiv = document.getElementById('logConsole'); 
+            if (!consoleDiv) { console.log(`LOG: [${type}] ${msg}`); return; }
+            const now = new Date();
+            const timeStr = `${now.toLocaleTimeString()}.${String(now.getMilliseconds()).padStart(3, '0')}`;
+            let colorClass = 'log-info';
+            if (type === 'warn') colorClass = 'log-warn';
+            if (type === 'error') colorClass = 'log-error';
+            if (type === 'success') colorClass = 'log-success'; 
+            if (type === 'debug') colorClass = 'log-debug';
+            const entry = document.createElement('div'); entry.className = `log-entry ${colorClass}`;
+            entry.textContent = `[${timeStr}] [${type.toUpperCase()}] ${msg}`;
+            consoleDiv.appendChild(entry); consoleDiv.scrollTop = consoleDiv.scrollHeight;
+        }
+
+        function showStatus(msg, type) {
+            const statusMsg = document.getElementById('statusMsg');
+            if (statusMsg) {
+                statusMsg.className = `status-msg ${type}`;
+                statusMsg.innerText = msg;
+            }
+            if(type === 'error') writeLog(msg, 'error');
+        }
+
+        function switchTab(tabId) {
+            document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+            document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
+            const tabs = ['tab-busca', 'tab-extracao', 'tab-despachos', 'tab-logs'];
+            const index = tabs.indexOf(tabId);
+            if(index >= 0) {
+                document.querySelectorAll('.tab-btn')[index].classList.add('active');
+                document.getElementById(tabId).classList.add('active');
+                if (tabId === 'tab-despachos') atualizarSelectMemoriaDespachos();
+            }
+        }
+        
+        function updateBadge() {
+            const badge = document.getElementById('dataBadge');
+            const total = targetList.length + excelTargetList.length;
+            if(badge) badge.innerText = total > 0 ? `${total} alvos na memória` : "Nenhum alvo na memória";
+            atualizarSelectMemoriaDespachos();
+        }
+
+        function clearSavedTargets() {
+            if (confirm("Deseja realmente limpar todos os nomes e alvos salvos na memória?")) {
+                targetList = []; excelTargetList = []; loadedZipFilesMap = []; globalHeaders = [];
+                updateBadge();
+                writeLog('Memória limpa.', 'warn'); showStatus('✓ Memória limpa com sucesso!', 'success'); 
+                document.getElementById('manualTerms').value = '';
+                document.getElementById('results').innerHTML = '';
+                document.getElementById('bulk-actions').style.display = 'none';
+            }
+        }
+
+        function renderExcludeColumnsCheckboxes() {
+            const container = document.getElementById('exclude-columns-checkboxes');
+            if (!container) return;
+            if (globalHeaders.length === 0) {
+                container.innerHTML = '<span style="color: #7f8c8d; font-style: italic; font-size: 12px;">Carregue um arquivo ZIP ou Excel...</span>';
+                return;
+            }
+            let html = '';
+            globalHeaders.forEach(function(h, idx) {
+                const cleanH = h ? h.trim() : `Coluna ${idx + 1}`;
+                const shouldExclude = (idx < 12 || idx >= 14);
+                html += `<label style="display: inline-flex; align-items: center; gap: 5px; font-size: 12px; cursor: pointer;">
+                    <input type="checkbox" class="exclude-col-checkbox" value="${cleanH.toUpperCase()}" ${shouldExclude ? 'checked' : ''}>
+                    <span>${idx + 1}. ${escapeHtml(cleanH.length > 18 ? cleanH.substring(0, 15) + '...' : cleanH)}</span>
+                </label>`;
+            });
+            container.innerHTML = html;
+        }
+
+        async function handlePdfUpload(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+            try {
+                const arrayBuffer = await file.arrayBuffer();
+                currentPdfArrayBuffer = arrayBuffer;
+                const loadingTask = pdfjsLib.getDocument({ data: arrayBuffer.slice(0) });
+                currentPdfDoc = await loadingTask.promise;
+                showStatus(`PDF carregado: ${file.name} (${currentPdfDoc.numPages} páginas)`, 'success');
+                writeLog(`PDF carregado com sucesso. Páginas totais: ${currentPdfDoc.numPages}`, 'success');
+            } catch (e) {
+                showStatus(`Erro ao carregar PDF.`, 'error');
+                writeLog(`Erro ao carregar PDF: ${e.message}`, 'error');
+            }
+        }
+
+        async function handleZipUpload(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+            showStatus("Processando arquivo ZIP...", "loading");
+            try {
+                const zip = new JSZip();
+                const zipContent = await zip.loadAsync(file);
+                let txtCount = 0, totalRecordsAdded = 0;
+                loadedZipFilesMap = {};
+                const selectEl = document.getElementById('zipFileSelect');
+                selectEl.innerHTML = '<option value="">-- Selecione um arquivo TXT --</option>';
+
+                for (let filename of Object.keys(zipContent.files)) {
+                    if (!zipContent.files[filename].dir) {
+                        const lowerName = filename.toLowerCase();
+                        if (lowerName.startsWith('arquivo_completo_496') && lowerName.endsWith('.txt')) {
+                            const arrayBufferTxt = await zipContent.files[filename].async('arraybuffer');
+                            const decoder = new TextDecoder('windows-1252');
+                            const txtText = decoder.decode(arrayBufferTxt);
+                            txtCount++;
+                            loadedZipFilesMap[filename] = txtText;
+                            const opt = document.createElement('option');
+                            opt.value = filename; opt.textContent = filename;
+                            selectEl.appendChild(opt);
+
+                            const lines = txtText.split(/\r?\n/);
+                            if (globalHeaders.length === 0 && lines.length >= 2) {
+                                globalHeaders = lines[1].split(';').map(h => h ? h.trim() : '').filter(h => h.length > 0);
+                                renderExcludeColumnsCheckboxes();
+                            }
+                            for (let i = 3; i < lines.length; i++) {
+                                let line = lines[i];
+                                if (!line.trim()) continue;
+                                const parts = line.split(';');
+                                const colName = parts[13] ? parts[13].trim() : '';
+                                const colCpf = parts[12] ? parts[12].trim() : '';
+                                if (colName || colCpf) {
+                                    targetList.push({ name: colName, cpf: colCpf, raw: parts });
+                                    totalRecordsAdded++;
+                                }
+                            }
+                        }
+                    }
+                }
+                updateBadge();
+                showStatus(`ZIP carregado: ${txtCount} TXTs lidos (${totalRecordsAdded} alvos).`, 'success');
+                writeLog(`ZIP carregado com sucesso. Registros importados: ${totalRecordsAdded}`, 'success');
+            } catch(e) {
+                showStatus(`Erro ao ler arquivo ZIP.`, 'error');
+                writeLog(`Erro ao ler ZIP: ${e.message}`, 'error');
+            }
+        }
+
+        async function handleExcelUpload(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+            try {
+                const data = await file.arrayBuffer();
+                const workbook = XLSX.read(data, { type: 'array' });
+                const firstSheetName = workbook.SheetNames[0];
+                const worksheet = workbook.Sheets[firstSheetName];
+                const json = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
+                let count = 0;
+                if (json.length >= 2) {
+                    globalHeaders = json[1].map(h => h ? String(h).trim() : '').filter(h => h.length > 0);
+                    renderExcludeColumnsCheckboxes();
+                }
+                json.forEach(function(row, idx) {
+                    if (idx > 1 && row.length > 0) {
+                        const nameVal = row[12] ? String(row[12]).trim().replace(/^"|"$/g, '') : '';
+                        const cpfVal = row[13] ? String(row[13]).trim().replace(/^"|"$/g, '') : '';
+                        if (nameVal || cpfVal) {
+                            excelTargetList.push({ name: nameVal, cpf: cpfVal });
+                            count++;
+                        }
+                    }
+                });
+                updateBadge();
+                showStatus(`Planilha Excel carregada com sucesso! (${count} registros)`, 'success');
+                writeLog(`Excel carregado. Registros: ${count}`, 'success');
+            } catch(e) {
+                showStatus(`Erro ao carregar Excel.`, 'error');
+                writeLog(`Erro Excel: ${e.message}`, 'error');
+            }
+        }
+
+        function onZipFileSelected() {}
+        function processAndRenderMatrix() {}
+        function downloadTransformedExcel() {}
+
+        // ==========================================
+        // MOTOR DE BUSCA NOMINAL E EXATO (RESTAURADO)
+        // ==========================================
+        const NAME_STOPWORDS = new Set(['DE','DA','DO','DAS','DOS','E','D','A','O']);
+        const NAME_SUFFIXES = new Set(['FILHO','FILHA','NETO','NETA','JUNIOR','JR','SOBRINHO','SEGUNDO']);
+
+        function normalizeText(s) {
+            return String(s == null ? '' : s).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase().replace(/[^A-Z0-9]+/g, ' ').replace(/\s+/g, ' ').trim();
+        }
+        function onlyDigits(s) { return String(s == null ? '' : s).replace(/\D+/g, ''); }
+        function cpfMiddle(raw) {
+            const d = onlyDigits(raw);
+            if (d.length === 11) return d.slice(3, 9);
+            if (d.length === 6) return d;
+            return null;
+        }
+        function formatMiddle(mid) { return mid ? `${mid.slice(0,3)}.${mid.slice(3)}` : ''; }
+        function cpfMiddleRegex(mid) { return new RegExp(`(?<![0-9])${mid.slice(0,3)}[.\\s-]?${mid.slice(3)}(?![0-9])`, 'g'); }
+
+        function buildSearchTargets() {
+            const manualLines = document.getElementById('manualTerms').value.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+            const targets = [];
+            const seen = new Set();
+            function push(name, cpf) {
+                const mid = cpfMiddle(cpf);
+                if (!mid && !name) return;
+                const key = `${normalizeText(name)}|${mid || ''}`;
+                if (seen.has(key)) return;
+                seen.add(key);
+                targets.push({ label: name || formatMiddle(mid), name: name || '', cpfMid: mid, found: false });
+            }
+            manualLines.forEach(line => {
+                const d = onlyDigits(line);
+                if (d.length >= 6) push('', line); else push(line, '');
+            });
+            targetList.forEach(i => push(i.name, i.cpf));
+            excelTargetList.forEach(i => push(i.name, i.cpf));
+            return targets;
+        }
+
+        async function performNominalSearch() {
+            if (!currentPdfDoc) { 
+                showStatus('Carregue um arquivo PDF do Diário Oficial primeiro.', 'error'); 
+                return; 
+            }
+            let targets = buildSearchTargets();
+            if (targets.length === 0) { 
+                showStatus('Nenhum alvo válido na memória para varredura.', 'error'); 
+                return; 
+            }
+
+            const mode = document.querySelector('input[name="nominalMode"]:checked').value;
+            showStatus('Iniciando varredura no PDF...', 'loading');
+            writeLog(`Iniciando varredura nominal. Total de alvos: ${targets.length}, Modo: ${mode}`, 'info');
+
+            const progressWrap = document.getElementById('progressWrap');
+            const progressBar = document.getElementById('progressBar');
+            progressWrap.style.display = 'block';
+            progressBar.style.width = '0%';
+
+            let totalHits = 0;
+            const resultsContainer = document.getElementById('results');
+            resultsContainer.innerHTML = '';
+            const hitsMap = new Map();
+
+            const numPages = currentPdfDoc.numPages;
+            for (let pageNum = 1; pageNum <= numPages; pageNum++) {
+                let percent = Math.round((pageNum / numPages) * 100);
+                progressBar.style.width = percent + '%';
+
+                try {
+                    const page = await currentPdfDoc.getPage(pageNum);
+                    const textContent = await page.getTextContent();
+                    const pageText = textContent.items.map(item => item.str).join(' ');
+                    const normPageText = normalizeText(pageText);
+
+                    for (let target of targets) {
+                        let matched = false;
+                        if ((mode === 'both' || mode === 'name') && target.name) {
+                            const normName = normalizeText(target.name);
+                            if (normName.length > 2 && normPageText.includes(normName)) {
+                                matched = true;
+                            }
+                        }
+                        if (!matched && (mode === 'both' || mode === 'cpf') && target.cpfMid) {
+                            if (pageText.includes(target.cpfMid) || pageText.includes(formatMiddle(target.cpfMid))) {
+                                matched = true;
+                            }
+                        }
+
+                        if (matched) {
+                            target.found = true;
+                            totalHits++;
+                            if (!hitsMap.has(target.label)) hitsMap.set(target.label, []);
+                            hitsMap.get(target.label).push({ pageNum, snippet: pageText.substring(0, 200) + '...' });
+                        }
+                    }
+                } catch (err) {
+                    writeLog(`Erro ao ler página ${pageNum}: ${err.message}`, 'error');
+                }
+            }
+
+            progressWrap.style.display = 'none';
+            showStatus(`Varredura concluída! ${totalHits} ocorrências encontradas para ${hitsMap.size} alvos.`, 'success');
+            writeLog(`Varredura finalizada. Ocorrências: ${totalHits}, Alvos encontrados: ${hitsMap.size}`, 'success');
+
+            if (hitsMap.size > 0) {
+                document.getElementById('bulk-actions').style.display = 'flex';
+                let html = '';
+                hitsMap.forEach((hits, label) => {
+                    html += `<div class="result-card">
+                        <input type="checkbox" class="result-check" value="${escapeHtml(label)}">
+                        <div style="flex:1;">
+                            <strong>${escapeHtml(label)}</strong> <span class="conf-badge conf-exato">EXATO</span>
+                            <div style="font-size: 12px; color: #555; margin-top: 5px;">Encontrado em ${hits.length} página(s): ${hits.map(h => `<a href="#" onclick="openPdfPage(${h.pageNum}); return false;">Pág. ${h.pageNum}</a>`).join(', ')}</div>
+                        </div>
+                    </div>`;
+                });
+                resultsContainer.innerHTML = html;
+            } else {
+                resultsContainer.innerHTML = '<div class="card" style="text-align:center; color:#7f8c8d;">Nenhum dos alvos procurados foi encontrado neste PDF.</div>';
+            }
+        }
+
+        async function openPdfPage(pageNum) {
+            if (!currentPdfDoc) return;
+            const modal = document.getElementById('pdfModal');
+            modal.style.display = 'flex';
+            document.getElementById('modalTitle').innerText = `Visualizador - Página ${pageNum}`;
+            try {
+                const page = await currentPdfDoc.getPage(pageNum);
+                const viewport = page.getViewport({ scale: 1.5 });
+                const canvas = document.getElementById('pdfCanvas');
+                const context = canvas.getContext('2d');
+                canvas.height = viewport.height;
+                canvas.width = viewport.width;
+                await page.render({ canvasContext: context, viewport: viewport }).promise;
+            } catch(e) {
+                writeLog(`Erro ao renderizar página ${pageNum}: ${e.message}`, 'error');
+            }
+        }
+
+        function closeModal() {
+            document.getElementById('pdfModal').style.display = 'none';
+        }
+
+        function copySelectedText() {
+            alert("Funcionalidade de cópia em lote acionada.");
+        }
+
+        // ==========================================
+        // LÓGICA DO HUB DE DESPACHOS SEI
+        // ==========================================
+        function atualizarSelectMemoriaDespachos() {
+            const select = document.getElementById('selectServidorMemoria');
+            if (!select) return;
+            let allSaved = [...targetList, ...excelTargetList];
+            if (allSaved.length === 0) {
+                select.innerHTML = '<option value="">-- Carregue dados na Aba 1 (ZIP/Excel) para listar --</option>';
+                return;
+            }
+            let html = '<option value="">-- Selecione um servidor da memória --</option>';
+            allSaved.forEach((item, idx) => {
+                let nome = item.name || 'Sem Nome';
+                let cpf = item.cpf ? ` (CPF: ${item.cpf})` : '';
+                html += `<option value="${idx}">${escapeHtml(nome)}${cpf}</option>`;
+            });
+            select.innerHTML = html;
+        }
+
+        function preencherDadosServidor() {
+            const select = document.getElementById('selectServidorMemoria');
+            const idx = select.value;
+            if (idx === "") return;
+            let allSaved = [...targetList, ...excelTargetList];
+            let serv = allSaved[parseInt(idx)];
+            if (serv) {
+                document.getElementById('inputNomeAuto').value = serv.name || '';
+                document.getElementById('inputCpfAuto').value = serv.cpf || '';
+            }
+        }
+
+        function togglePrazoCustom() {
+            const sel = document.getElementById('selectPrazo').value;
+            const customInput = document.getElementById('inputPrazoCustom');
+            if (sel === 'outro') {
+                customInput.style.display = 'block';
+            } else {
+                customInput.style.display = 'none';
+                customInput.value = '';
+            }
+        }
+
+        function processarDadosSEI() {
+            const texto = document.getElementById('textoBrutoSEI').value.trim();
+            if (!texto) {
+                alert("Por favor, cole o texto do SEI primeiro.");
+                return;
+            }
+
+            let numProcesso = "Não identificado";
+            const regexProcesso = /Processo\s*n[ºo]?\.?\s*([0-9]+)/i;
+            const matchProcesso = texto.match(regexProcesso);
+            if (matchProcesso && matchProcesso[1]) {
+                numProcesso = matchProcesso[1];
+            } else {
+                const matchFallback = texto.match(/(\d{5}\.\d{6}\/\d{4}-\d{2}|\b20\d{12}\b)/);
+                if (matchFallback) numProcesso = matchFallback[0];
+            }
+
+            let numSeiDoc = "94357852";
+            const regexSeiDoc = /SEI\s*[nºoº\.]*\s*([0-9]{6,10})/gi;
+            const matchesSei = [...texto.matchAll(regexSeiDoc)];
+            if (matchesSei.length > 0) {
+                let matchEscolhido = matchesSei[matchesSei.length - 1];
+                for (let m of matchesSei) {
+                    if (m[1].length === 8) { matchEscolhido = m; break; }
+                }
+                numSeiDoc = matchEscolhido[1];
+            }
+
+            let tituloDocFormatado = "Despacho nº 4.465/2026/CBM/SG-PROTOCOLO";
+            let orgaoEmissor = "CBM/SG-PROTOCOLO";
+            const regexDespacho = /DESPACHO\s*N[ºo]?\.?\s*([0-9]+\/[0-9]+\/([A-Z0-9\-\/]+))/i;
+            const matchDespacho = texto.match(regexDespacho);
+            if (matchDespacho) {
+                let numeroBruto = matchDespacho[1];
+                let partes = numeroBruto.split('/');
+                if (partes.length >= 2) {
+                    let numLimpo = parseInt(partes[0], 10);
+                    let numFormatado = !isNaN(numLimpo) ? numLimpo.toLocaleString('pt-BR') : partes[0];
+                    let ano = partes[1];
+                    orgaoEmissor = partes.slice(2).join('/');
+                    tituloDocFormatado = `Despacho nº ${numFormatado}/${ano}/${orgaoEmissor}`;
+                }
+            }
+
+            const linhas = texto.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+            let assunto = "Adesão ao Termo de Cooperação";
+            for (let linha of linhas) {
+                if (linha.toUpperCase().includes('ASSUNTO:')) {
+                    assunto = linha.replace(/^assunto:\s*/i, '').trim();
+                    break;
+                }
+            }
+            if (assunto.length > 70) assunto = assunto.substring(0, 67) + "...";
+
+            document.getElementById('inputProcessoAuto').value = numProcesso;
+            document.getElementById('inputSeiDocAuto').value = numSeiDoc;
+            document.getElementById('inputTituloDocAuto').value = tituloDocFormatado;
+            document.getElementById('inputOrgaoAuto').value = orgaoEmissor;
+            document.getElementById('inputAssuntoAuto').value = assunto;
+
+            atualizarTemplate1();
+            writeLog(`Metadados extraídos com sucesso. Título: ${tituloDocFormatado}`, 'success');
+        }
+
+        function atualizarTemplate1() {
+            const tituloDoc = document.getElementById('inputTituloDocAuto').value || "Despacho nº 4.465/2026/CBM/SG-PROTOCOLO";
+            const seiDoc = document.getElementById('inputSeiDocAuto').value || "94357852";
+            const orgao = document.getElementById('inputOrgaoAuto').value || "CBM/SG-PROTOCOLO";
+            const assunto = document.getElementById('inputAssuntoAuto').value || "Adesão ao Termo de Cooperação";
+            const setor = document.getElementById('selectSetorDestino').value || "Folha de Pagamento";
+            const processo = document.getElementById('inputProcessoAuto').value || "202600005025829";
+            const nome = document.getElementById('inputNomeAuto').value || "ADJANE FERNANDES CARVALHO LOUZADA";
+            const cpf = document.getElementById('inputCpfAuto').value || "711.098.705-15";
+
+            const textoTemplate1 = `Trata-se do ${tituloDoc} (${seiDoc}), da ${orgao}, que versa sobre ${assunto}.
+
+Encaminhem-se os autos aos setores ${setor} para providências.
+
+Encaminhe-se o presente processo nº ${processo} (SEI nº ${seiDoc}), referente ao servidor(a) ${nome} (CPF nº ${cpf}), com assunto "${assunto}", para análise técnica e manifestação conclusiva, tendo em vista a verificação preliminar de conformidade procedimental realizada por esta GEDEP.
+
+Atenciosamente,`;
+
+            document.getElementById('t1').value = textoTemplate1;
+        }
+
+        function aplicarDadosEmTodosTemplates() {
+            atualizarTemplate1();
+            adicionarRegistroTabela();
+            alert("Template 1 atualizado e registro adicionado à tabela de controle!");
+            writeLog("Dados injetados e salvos na tabela de registro.", "success");
+        }
+
+        function adicionarRegistroTabela() {
+            const tbody = document.querySelector('#tabelaRegistroDespacho tbody');
+            const linhaVazia = document.getElementById('linhaVaziaTabela');
+            if (linhaVazia) linhaVazia.remove();
+
+            const usuario = document.getElementById('inputUsuario').value || "Não informado";
+            const dataUtilizacao = new Date().toLocaleDateString('pt-BR');
+            const colunaVazia = "";
+            
+            let prazoMax = document.getElementById('selectPrazo').value;
+            if (prazoMax === 'outro') {
+                prazoMax = document.getElementById('inputPrazoCustom').value || "Não especificado";
+            }
+            
+            const status = "Concluído";
+            const procedencia = document.getElementById('inputOrgaoAuto').value || "GEDEP";
+            const destino = document.getElementById('selectSetorDestino').value || "Folha de Pagamento";
+            const processoSei = document.getElementById('inputProcessoAuto').value || "N/D";
+            const assunto = document.getElementById('inputAssuntoAuto').value || "N/D";
+            const colunaSemPreenchimento = "";
+            const interessados = document.getElementById('inputNomeAuto').value || "N/D";
+
+            const novaLinha = document.createElement('tr');
+            novaLinha.innerHTML = `
+                <td>${escapeHtml(usuario)}</td>
+                <td>${escapeHtml(dataUtilizacao)}</td>
+                <td>${escapeHtml(colunaVazia)}</td>
+                <td>${escapeHtml(prazoMax)}</td>
+                <td>${escapeHtml(status)}</td>
+                <td>${escapeHtml(procedencia)}</td>
+                <td>${escapeHtml(destino)}</td>
+                <td>${escapeHtml(processoSei)}</td>
+                <td>${escapeHtml(assunto)}</td>
+                <td>${escapeHtml(colunaSemPreenchimento)}</td>
+                <td>${escapeHtml(interessados)}</td>
+            `;
+            tbody.appendChild(novaLinha);
+        }
+
+        function limparTabelaRegistro() {
+            if (confirm("Deseja limpar todos os registros da tabela?")) {
+                const tbody = document.querySelector('#tabelaRegistroDespacho tbody');
+                tbody.innerHTML = `<tr id="linhaVaziaTabela"><td colspan="11" style="text-align: center; color: #7f8c8d; font-style: italic;">Nenhum registro adicionado ainda. Clique em "Injetar Dados e Registrar".</td></tr>`;
+            }
+        }
+
+        function copiarTextoHub(id, btn) {
+            const textarea = document.getElementById(id);
+            textarea.select();
+            textarea.setSelectionRange(0, 99999);
+            navigator.clipboard.writeText(textarea.value).then(() => {
+                const textoOriginal = btn.innerHTML;
+                btn.innerHTML = "✓ Copiado com Sucesso!";
+                btn.classList.add("copied");
+                setTimeout(() => { btn.innerHTML = textoOriginal; btn.classList.remove("copied"); }, 2000);
+            });
+        }
+
+        function escapeHtml(text) {
+            const map = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' };
+            return String(text).replace(/[&<>"']/g, m => map[m]);
+        }
+
+        document.addEventListener('DOMContentLoaded', () => {
+            writeLog(`Sistema inicializado (${APP_VERSION}).`, "success");
+            renderExcludeColumnsCheckboxes();
+            atualizarSelectMemoriaDespachos();
+            try {
+                if (window.location.protocol === 'file:') {
+                    pdfjsLib.GlobalWorkerOptions.workerSrc = '';
+                } else {
+                    pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+                }
+            } catch(e) {}
+        });
+    </script>
+</body>
+</html>
