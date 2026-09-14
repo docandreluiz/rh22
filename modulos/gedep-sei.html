@@ -718,7 +718,8 @@
             </div>
             <div class="action-bar" style="justify-content: flex-end; margin-bottom: 0;">
                 <button class="btn btn-sm btn-clear" onclick="fecharEditorRegistro()">Cancelar</button>
-                <button class="btn btn-sm btn-excel" onclick="salvarEditorRegistro()">Salvar complemento</button>
+                <button class="btn btn-sm btn-excel" onclick="salvarEditorRegistro()">Salvar complemento local</button>
+                <button class="btn btn-sm btn-view" onclick="salvarProcessoPlanilha()">☁️ Salvar na planilha</button>
             </div>
         </div>
     </div>
@@ -916,6 +917,28 @@
             registrarAlteracoesHistorico(item, novoItem, idx, document.getElementById('editorObservacao')?.value.trim() || '');
             historicoData[idx] = novoItem;
             fecharEditorRegistro(); aplicarFiltrosColuna(); atualizarDashboardRotina(); renderPainelPrazosCaixa(); renderPainelProducaoServidor(); renderPainelDemandaTemporal(); writeLog(`Dados do processo ${novoItem.processo || 'sem número'} atualizados.`, 'success');
+        }
+
+        function salvarProcessoPlanilha() {
+            if (!seiAccessToken || !window.gapi || !gapi.client || !gapi.client.sheets) { alert('Entre com Google antes de salvar na planilha.'); return; }
+            const idx = Number(document.getElementById('editorRegistroIdx').value);
+            const item = historicoData[idx];
+            if (!item) { alert('Nenhum processo selecionado.'); return; }
+            const get = id => String(document.getElementById(id)?.value || '').trim();
+            const dados = { assessor:get('editorAssessor'), processo:get('editorProcesso'), recebimento:valorDataInputParaSistema(document.getElementById('editorRecebimento').value), envio:valorDataInputParaSistema(document.getElementById('editorEnvio').value), prazo:valorDataInputParaSistema(document.getElementById('editorPrazo').value), status:get('editorStatus'), procedencia:get('editorProcedencia'), destino:get('editorDestino'), assunto:get('editorAssunto'), interessados:get('editorInteressados'), linhaRef:get('editorLinhaRef'), recorrencia:get('editorRecorrencia'), atualizadoEm:new Date().toISOString(), atualizadoPor:seiEmail };
+            if (!dados.processo) { alert('Informe o número do processo SEI antes de salvar.'); return; }
+            seiStatus('Salvando processo na planilha...');
+            gapi.client.sheets.spreadsheets.values.get({spreadsheetId:GEDEP_CONFIG.spreadsheetId, range:'processos!A:Z'}).then(function(response) {
+                const values=response.result.values||[]; const headers=values[0]||[];
+                if (!headers.length) throw new Error('A aba processos está vazia ou sem cabeçalho.');
+                const normal=key => String(key||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/[^a-z0-9]/g,'');
+                const aliases={assessor:['assessor','atribuicao','assessorrresponsavel','responsavel'],processo:['processo','processosei','numerosei'],recebimento:['recebimento','datarecebimento'],envio:['envio','dataenvio','datadeenvio'],prazo:['prazo','prazolimite','prazolimiteparaenvio','datalimite'],status:['status','situacao'],procedencia:['procedencia','origem'],destino:['destino'],assunto:['assunto','tema'],interessados:['interessados','interessado'],linhaRef:['linhadereferencia','linhareferencia','linharef'],recorrencia:['recorrencia']};
+                const row=headers.map(function(header){ const h=normal(header); for(const campo of Object.keys(aliases)){ if(aliases[campo].includes(h)) return dados[campo]||''; } return ''; });
+                let processCol=-1; headers.forEach(function(h,i){if(aliases.processo.includes(normal(h)))processCol=i;});
+                const found=processCol>=0 ? values.slice(1).findIndex(function(r){return String(r[processCol]||'').trim()===dados.processo;}) : -1;
+                if(found>=0) return gapi.client.sheets.spreadsheets.values.update({spreadsheetId:GEDEP_CONFIG.spreadsheetId,range:'processos!A'+(found+2)+':Z'+(found+2),valueInputOption:'USER_ENTERED',resource:{values:[row]}}).then(function(){return 'atualizado';});
+                return gapi.client.sheets.spreadsheets.values.append({spreadsheetId:GEDEP_CONFIG.spreadsheetId,range:'processos!A:Z',valueInputOption:'USER_ENTERED',insertDataOption:'INSERT_ROWS',resource:{values:[row]}}).then(function(){return 'incluído';});
+            }).then(function(acao){ seiStatus('Processo '+acao+' na planilha.'); writeLog('Processo '+dados.processo+' '+acao+' na aba processos.','success'); alert('Processo '+acao+' na planilha com sucesso.'); }).catch(function(err){ const d=err&&err.result&&err.result.error?(err.result.error.message||('HTTP '+err.result.error.code)):(err.message||String(err)); seiStatus('Sheets: '+d,true); writeLog('Falha ao salvar processo: '+d,'error'); alert('Não foi possível salvar na planilha: '+d); });
         }
 
         function exportarProcessosEstruturadosExcel() {
