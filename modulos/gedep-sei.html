@@ -957,10 +957,14 @@
                 const processoCol=headers.findIndex(function(h){return aliases.processo.includes(normal(h));});
                 const existentes={}; if(processoCol>=0) values.slice(1).forEach(function(row,i){const n=String(row[processoCol]||'').trim();if(n)existentes[n]=i+2;});
                 const fazerLinha=function(item){return headers.map(function(header){const h=normal(header);for(const campo of Object.keys(aliases)){if(aliases[campo].includes(h))return item[campo]||'';}return '';});};
-                let incluidas=0, atualizadas=0;
-                const fila=registros.reduce(function(p,item){ return p.then(function(){ const linha=fazerLinha(item); const rowNum=existentes[item.processo]; if(rowNum){ atualizadas++; return gapi.client.sheets.spreadsheets.values.update({spreadsheetId:GEDEP_CONFIG.spreadsheetId,range:'processos!A'+rowNum+':Z'+rowNum,valueInputOption:'USER_ENTERED',resource:{values:[linha]}}); } incluidas++; return gapi.client.sheets.spreadsheets.values.append({spreadsheetId:GEDEP_CONFIG.spreadsheetId,range:'processos!A:Z',valueInputOption:'USER_ENTERED',insertDataOption:'INSERT_ROWS',resource:{values:[linha]}}); }); }, Promise.resolve());
-                return fila.then(function(){return {incluidas:incluidas,atualizadas:atualizadas};});
-            }).then(function(resultado){seiStatus('Envio concluído.');writeLog('Importação enviada: '+resultado.incluidas+' incluídos e '+resultado.atualizadas+' atualizados.','success');alert('Envio concluído.\nIncluídos: '+resultado.incluidas+'\nAtualizados: '+resultado.atualizadas);}).catch(function(err){const d=err&&err.result&&err.result.error?(err.result.error.message||('HTTP '+err.result.error.code)):(err.message||String(err));seiStatus('Sheets: '+d,true);writeLog('Falha no envio da importação: '+d,'error');alert('Não foi possível enviar a importação: '+d);});
+                const updates=[]; const novos=[]; let ignorados=0;
+                registros.forEach(function(item){ const linha=fazerLinha(item); const rowNum=existentes[item.processo]; if(rowNum) updates.push({range:'processos!A'+rowNum+':Z'+rowNum, values:[linha]}); else novos.push(linha); });
+                seiStatus('Enviando em lote: '+updates.length+' atualizações e '+novos.length+' inclusões...');
+                let promessa=Promise.resolve();
+                if(updates.length) promessa=promessa.then(function(){ return gapi.client.sheets.spreadsheets.values.batchUpdate({spreadsheetId:GEDEP_CONFIG.spreadsheetId, resource:{valueInputOption:'USER_ENTERED', data:updates}}); });
+                if(novos.length) promessa=promessa.then(function(){ return gapi.client.sheets.spreadsheets.values.append({spreadsheetId:GEDEP_CONFIG.spreadsheetId,range:'processos!A:Z',valueInputOption:'USER_ENTERED',insertDataOption:'INSERT_ROWS',resource:{values:novos}}); });
+                return promessa.then(function(){return {incluidas:novos.length,atualizadas:updates.length,ignorados:ignorados};});
+            }).then(function(resultado){seiStatus('Envio em lote concluído.');writeLog('Importação enviada em lote: '+resultado.incluidas+' incluídos e '+resultado.atualizadas+' atualizados.','success');alert('Envio concluído.\nIncluídos: '+resultado.incluidas+'\nAtualizados: '+resultado.atualizadas);}).catch(function(err){const d=err&&err.result&&err.result.error?(err.result.error.message||('HTTP '+err.result.error.code)):(err.message||String(err));seiStatus('Sheets: '+d,true);writeLog('Falha no envio em lote: '+d,'error');alert('Não foi possível enviar a importação: '+d);});
         }
 
         function exportarProcessosEstruturadosExcel() {
@@ -1736,6 +1740,6 @@
 
         function normalizeText(s) { return String(s == null ? '' : s).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase().replace(/[^A-Z0-9]+/g, ' ').trim(); }
         function escapeHtml(text) { const map = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' }; return String(text).replace(/[&<>"']/g, m => map[m]); }
-    </script>
+    </script> 10
 </body>
 </html>
