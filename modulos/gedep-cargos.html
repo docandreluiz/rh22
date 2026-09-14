@@ -169,7 +169,7 @@
                     <h2 class="text-lg font-bold text-slate-800">Diretório de Pessoas Cadastradas</h2>
                     <div class="flex items-center gap-2 flex-wrap">
                         <button onclick="cargosExportarTodos()" class="bg-cyan-700 hover:bg-cyan-800 text-white font-semibold px-3 py-1.5 rounded text-xs"><i class="fa-solid fa-cloud-arrow-up mr-1"></i> Exportar todos para a planilha</button>
-                        <input type="text" id="searchServidor" onkeyup="renderTabelaServidores()" placeholder="Buscar por nome, CPF ou lotação..." class="border border-slate-300 rounded px-3 py-1.5 text-sm w-80">
+                        <input type="text" id="searchServidor" onkeyup="renderTabelaServidoresDebounced()" placeholder="Buscar por nome, CPF ou lotação..." class="border border-slate-300 rounded px-3 py-1.5 text-sm w-80">
                     </div>
                 </div>
                 <div class="overflow-x-auto">
@@ -375,62 +375,19 @@
             if (window.google && window.gapi) iniciar(); else setTimeout(iniciar, 1200);
         }
 
-        function cargosNormalizarServidor(r) {
-            return {
-                id: r.id || ('remote_' + Math.random().toString(36).slice(2)),
-                nome: r.nome || '', cpf: r.cpf || '', lotacao: r.lotacao || '',
-                cargoEfetivo: r.cargo || '', cargoComissionado: r.fcpeAtual || '',
-                observacoes: '', foto: r.fotoUrl || '',
-                fcpeAtual: r.fcpeAtual || 'NENHUMA', areaAtual: r.areaAtual || '',
-                statusMinuta: r.statusMinuta || 'Em elaboração', historico: []
-            };
+        function cargosNormal(v){return String(v||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/[^a-z0-9]/g,'');}
+        function cargosCampo(raw,nomes){for(const nome of nomes){const key=Object.keys(raw).find(k=>cargosNormal(k)===cargosNormal(nome));if(key&&String(raw[key]||'').trim())return raw[key];}return '';}
+        function cargosId(servidor){return String(servidor.idServidor||servidor.id||'').trim();}
+        function cargosNormalizarServidor(r){const id=cargosCampo(r,['idServidor'])||cargosCampo(r,['id'])||('srv_'+(String(cargosCampo(r,['cpf'])).replace(/\D/g,'')||cargosNormal(cargosCampo(r,['nome'])).slice(0,30)));return {idServidor:id,id:id,nome:cargosCampo(r,['nome']),cpf:cargosCampo(r,['cpf']),lotacao:cargosCampo(r,['lotacao']),cargoEfetivo:cargosCampo(r,['cargo']),cargoComissionado:cargosCampo(r,['fcpeAtual']),observacoes:'',foto:cargosCampo(r,['fotoUrl']),fcpeAtual:cargosCampo(r,['fcpeAtual'])||'NENHUMA',areaAtual:cargosCampo(r,['areaAtual']),statusMinuta:cargosCampo(r,['statusMinuta'])||'Em elaboração',historico:[]};}
+        function cargosSincronizar(){
+            if(!cargosAccessToken){cargosStatus('Faça login antes de buscar dados.',true);return;}cargosStatus('Buscando servidores...');Promise.resolve(gapi.client.sheets.spreadsheets.values.get({spreadsheetId:GEDEP_CONFIG.spreadsheetId,range:CARGOS_SHEET_RANGE})).then(function(response){const values=response.result.values||[];if(!values.length)throw new Error('A aba servidores está vazia ou sem cabeçalho.');const headers=values[0];const remote=values.slice(1).map(function(row){const r={};headers.forEach(function(h,i){r[h]=row[i]||'';});return cargosNormalizarServidor(r);}).filter(function(r){return r.nome;});if(!confirm('Foram encontrados '+remote.length+' servidores. Substituir a lista local?'))return;appData.servidores=remote;salvarDados();cargosStatus('Sincronizado: '+remote.length+' servidores.');}).catch(function(err){const d=err&&err.result&&err.result.error?(err.result.error.message||('HTTP '+err.result.error.code)):(err.message||String(err));cargosStatus('Sheets: '+d,true);alert('Não foi possível buscar servidores: '+d);});
         }
-
-        function cargosSincronizar() {
-            if (!cargosAccessToken) { cargosStatus('Faça login antes de buscar dados.', true); return; }
-            cargosStatus('Buscando servidores...');
-            gapi.client.sheets.spreadsheets.values.get({ spreadsheetId: GEDEP_CONFIG.spreadsheetId, range: CARGOS_SHEET_RANGE })
-                .then(function(response) {
-                    const values = response.result.values || [];
-                    if (!values.length) throw new Error('A aba servidores está vazia ou sem cabeçalho.');
-                    const headers = values[0];
-                    const remote = values.slice(1).map(function(row) { const r = {}; headers.forEach(function(h, i) { r[h] = row[i] || ''; }); return cargosNormalizarServidor(r); }).filter(function(r) { return r.nome; });
-                    if (!confirm('Foram encontrados ' + remote.length + ' servidores. Substituir a lista local?')) return;
-                    appData.servidores = remote;
-                    salvarDados();
-                    cargosStatus('Sincronizado: ' + remote.length + ' servidores.');
-                }).catch(function(err) { const d = err && err.result && err.result.error ? (err.result.error.message || ('HTTP ' + err.result.error.code)) : (err.message || String(err)); cargosStatus('Sheets: ' + d, true); console.error(err); });
+        function cargosLinha(headers,s,base){const id=cargosId(s);const mapa={idservidor:id,id:id,nome:s.nome||'',cpf:s.cpf||'',cargo:s.cargoEfetivo||'',lotacao:s.lotacao||'',fcpeatual:s.cargoComissionado||s.fcpeAtual||'',areaatual:s.areaAtual||'',statusminuta:s.statusMinuta||'Em elaboração',fotofileid:s.fotoFileId||'',fotourl:s.foto||'',whatsappnumero:s.whatsappNumero||'',atualizadoem:new Date().toISOString(),atualizadopor:cargosEmail};return headers.map(function(h,i){const n=cargosNormal(h);return mapa[n]!==undefined?mapa[n]:((base&&base[i])||'');});}
+        function cargosSalvarServidorOnline(id){
+            if(!cargosAccessToken){cargosStatus('Faça login antes de gravar.',true);return;}const servidor=appData.servidores.find(function(item){return cargosId(item)===id||item.cpf===id;});if(!servidor){cargosStatus('Servidor não encontrado.',true);return;}cargosStatus('Gravando servidor online...');Promise.resolve(gapi.client.sheets.spreadsheets.values.get({spreadsheetId:GEDEP_CONFIG.spreadsheetId,range:CARGOS_SHEET_RANGE})).then(function(response){const values=response.result.values||[],headers=values[0]||[];if(!headers.length)throw new Error('A aba servidores está vazia ou sem cabeçalho.');const idCol=headers.findIndex(function(h){return cargosNormal(h)==='idservidor';});if(idCol<0)throw new Error('A aba servidores precisa ter a coluna idServidor.');const idValue=cargosId(servidor);const found=values.slice(1).findIndex(function(row){return String(row[idCol]||'')===idValue;});const row=cargosLinha(headers,servidor,found>=0?values[found+1]:[]);const col=String.fromCharCode(64+headers.length);if(found>=0)return gapi.client.sheets.spreadsheets.values.update({spreadsheetId:GEDEP_CONFIG.spreadsheetId,range:'servidores!A'+(found+2)+':'+col+(found+2),valueInputOption:'USER_ENTERED',resource:{values:[row]}});return gapi.client.sheets.spreadsheets.values.append({spreadsheetId:GEDEP_CONFIG.spreadsheetId,range:'servidores!A:'+col,valueInputOption:'USER_ENTERED',insertDataOption:'INSERT_ROWS',resource:{values:[row]}});}).then(function(){cargosStatus('Servidor gravado na planilha.');alert('Servidor gravado na planilha com sucesso.');}).catch(function(err){const d=err&&err.result&&err.result.error?(err.result.error.message||('HTTP '+err.result.error.code)):(err.message||String(err));cargosStatus('Sheets: '+d,true);alert('Não foi possível gravar: '+d);});
         }
-
-        function cargosSalvarServidorOnline(id) {
-            if (!cargosAccessToken) { cargosStatus('Faça login antes de gravar.', true); return; }
-            const servidor = appData.servidores.find(function(item) { return item.id === id; });
-            if (!servidor) return;
-            cargosStatus('Gravando servidor online...');
-            gapi.client.sheets.spreadsheets.values.get({ spreadsheetId: GEDEP_CONFIG.spreadsheetId, range: CARGOS_SHEET_RANGE }).then(function(response) {
-                const values = response.result.values || [], headers = values[0] || [];
-                const row = { id: servidor.id, nome: servidor.nome, cpf: servidor.cpf, cargo: servidor.cargoEfetivo || '', lotacao: servidor.lotacao || '', fcpeAtual: servidor.cargoComissionado || 'NENHUMA', areaAtual: '', statusMinuta: 'Em elaboração', fotoFileId: '', fotoUrl: '', whatsappNumero: '', atualizadoEm: new Date().toISOString(), atualizadoPor: cargosEmail };
-                const linha = headers.map(function(h) { return row[h] === undefined ? '' : row[h]; });
-                const idCol = headers.indexOf('id');
-                const index = idCol >= 0 ? values.slice(1).findIndex(function(r) { return r[idCol] === servidor.id; }) : -1;
-                if (index >= 0) return gapi.client.sheets.spreadsheets.values.update({ spreadsheetId: GEDEP_CONFIG.spreadsheetId, range: 'servidores!A' + (index + 2) + ':Z' + (index + 2), valueInputOption: 'USER_ENTERED', resource: { values: [linha] } });
-                return gapi.client.sheets.spreadsheets.values.append({ spreadsheetId: GEDEP_CONFIG.spreadsheetId, range: 'servidores!A:Z', valueInputOption: 'USER_ENTERED', insertDataOption: 'INSERT_ROWS', resource: { values: [linha] } });
-            }).then(function() { cargosStatus('Servidor gravado na planilha.'); }).catch(function(err) { const d = err && err.result && err.result.error ? (err.result.error.message || ('HTTP ' + err.result.error.code)) : (err.message || String(err)); cargosStatus('Sheets: ' + d, true); });
-        }
-
-        function cargosExportarTodos() {
-            if (!cargosAccessToken) { cargosStatus('Faça login antes de exportar.', true); return; }
-            const servidores=appData.servidores||[];
-            if (!servidores.length) { cargosStatus('Não há cadastros locais para exportar.', true); return; }
-            if (!confirm('Exportar '+servidores.length+' cadastros para a aba servidores? Registros com o mesmo ID serão atualizados.')) return;
-            cargosStatus('Preparando exportação em lote...');
-            gapi.client.sheets.spreadsheets.values.get({spreadsheetId:GEDEP_CONFIG.spreadsheetId,range:CARGOS_SHEET_RANGE}).then(function(response){
-                const values=response.result.values||[],headers=values[0]||[]; if(!headers.length) throw new Error('A aba servidores está vazia ou sem cabeçalho.');
-                const atuais={}; const idCol=headers.indexOf('id'); if(idCol>=0) values.slice(1).forEach(function(row,i){if(row[idCol])atuais[String(row[idCol])]=i+2;});
-                const rows=servidores.map(function(servidor){const row={id:servidor.id,nome:servidor.nome||'',cpf:servidor.cpf||'',cargo:servidor.cargoEfetivo||'',lotacao:servidor.lotacao||'',fcpeAtual:servidor.cargoComissionado||'NENHUMA',areaAtual:servidor.areaAtual||'',statusMinuta:servidor.statusMinuta||'Em elaboração',fotoFileId:'',fotoUrl:servidor.foto||'',whatsappNumero:'',atualizadoEm:new Date().toISOString(),atualizadoPor:cargosEmail};return {id:servidor.id,values:headers.map(function(h){return row[h]===undefined?'':row[h];})};});
-                const updates=[],novos=[]; rows.forEach(function(item){if(atuais[item.id])updates.push({range:'servidores!A'+atuais[item.id]+':Z'+atuais[item.id],values:[item.values]});else novos.push(item.values);});
-                let promise=Promise.resolve(); if(updates.length)promise=promise.then(function(){return gapi.client.sheets.spreadsheets.values.batchUpdate({spreadsheetId:GEDEP_CONFIG.spreadsheetId,resource:{valueInputOption:'USER_ENTERED',data:updates}});}); if(novos.length)promise=promise.then(function(){return gapi.client.sheets.spreadsheets.values.append({spreadsheetId:GEDEP_CONFIG.spreadsheetId,range:'servidores!A:Z',valueInputOption:'USER_ENTERED',insertDataOption:'INSERT_ROWS',resource:{values:novos}});}); return promise.then(function(){return {u:updates.length,n:novos.length};});
-            }).then(function(r){cargosStatus('Exportação concluída: '+r.n+' incluídos e '+r.u+' atualizados.');alert('Exportação concluída.\nIncluídos: '+r.n+'\nAtualizados: '+r.u);}).catch(function(err){const d=err&&err.result&&err.result.error?(err.result.error.message||('HTTP '+err.result.error.code)):(err.message||String(err));cargosStatus('Sheets: '+d,true);alert('Não foi possível exportar: '+d);});
+        function cargosExportarTodos(){
+            if(!cargosAccessToken){cargosStatus('Faça login antes de exportar.',true);return;}const servidores=appData.servidores||[];if(!servidores.length){cargosStatus('Não há cadastros locais para exportar.',true);return;}if(!confirm('Exportar '+servidores.length+' cadastros para a planilha?'))return;cargosStatus('Preparando exportação em lote...');Promise.resolve(gapi.client.sheets.spreadsheets.values.get({spreadsheetId:GEDEP_CONFIG.spreadsheetId,range:CARGOS_SHEET_RANGE})).then(function(response){const values=response.result.values||[],headers=values[0]||[];if(!headers.length)throw new Error('A aba servidores está vazia ou sem cabeçalho.');const idCol=headers.findIndex(function(h){return cargosNormal(h)==='idservidor';});if(idCol<0)throw new Error('A aba servidores precisa ter a coluna idServidor.');const atuais={};values.slice(1).forEach(function(row,i){if(row[idCol])atuais[String(row[idCol])]=i+2;});const updates=[],novos=[];servidores.forEach(function(s){const id=cargosId(s);if(!id)return;const row=cargosLinha(headers,s,atuais[id]?values[atuais[id]-1]:[]);if(atuais[id])updates.push({range:'servidores!A'+atuais[id]+':'+String.fromCharCode(64+headers.length)+atuais[id],values:[row]});else novos.push(row);});let promise=Promise.resolve();if(updates.length)promise=promise.then(function(){return gapi.client.sheets.spreadsheets.values.batchUpdate({spreadsheetId:GEDEP_CONFIG.spreadsheetId,resource:{valueInputOption:'USER_ENTERED',data:updates}});});if(novos.length)promise=promise.then(function(){return gapi.client.sheets.spreadsheets.values.append({spreadsheetId:GEDEP_CONFIG.spreadsheetId,range:'servidores!A:'+String.fromCharCode(64+headers.length),valueInputOption:'USER_ENTERED',insertDataOption:'INSERT_ROWS',resource:{values:novos}});});return promise.then(function(){return{u:updates.length,n:novos.length};});}).then(function(r){cargosStatus('Exportação concluída: '+r.n+' incluídos e '+r.u+' atualizados.');alert('Exportação concluída.\nIncluídos: '+r.n+'\nAtualizados: '+r.u);}).catch(function(err){const d=err&&err.result&&err.result.error?(err.result.error.message||('HTTP '+err.result.error.code)):(err.message||String(err));cargosStatus('Sheets: '+d,true);alert('Não foi possível exportar: '+d);});
         }
 
         function cargosLogout() {
@@ -495,34 +452,35 @@
             reader.readAsDataURL(file);
         }
 
+        let cargosRenderTimer = null;
+        function renderTabelaServidoresDebounced() {
+            clearTimeout(cargosRenderTimer);
+            cargosRenderTimer = setTimeout(renderTabelaServidores, 120);
+        }
+
         function renderTabelaServidores() {
-            const filtro = document.getElementById('searchServidor')?.value.toLowerCase() || '';
+            const filtro = (document.getElementById('searchServidor')?.value || '').toLowerCase().trim();
             const tbody = document.getElementById('tabelaServidoresBody');
-            tbody.innerHTML = '';
-            const filtrados = appData.servidores.filter(s => s.nome.toLowerCase().includes(filtro) || (s.cpf && s.cpf.toLowerCase().includes(filtro)) || (s.lotacao && s.lotacao.toLowerCase().includes(filtro)));
-            
-            if (filtrados.length === 0) {
-                tbody.innerHTML = `<tr><td colspan="5" class="p-4 text-center text-slate-400">Nenhuma pessoa encontrada.</td></tr>`;
+            if (!tbody) return;
+            const filtrados = appData.servidores.filter(function(s) {
+                return !filtro || String(s.nome||'').toLowerCase().includes(filtro) || String(s.cpf||'').toLowerCase().includes(filtro) || String(s.lotacao||'').toLowerCase().includes(filtro);
+            });
+            if (!filtrados.length) {
+                tbody.innerHTML = '<tr><td colspan="5" class="p-4 text-center text-slate-400">Nenhuma pessoa encontrada.</td></tr>';
                 return;
             }
-
-            filtrados.forEach(s => {
+            const html = filtrados.map(function(s) {
                 const sId = s.id || s.cpf;
-                let fotoHtml = s.foto ? `<img src="${s.foto}" class="w-10 h-10 rounded-full object-cover border shadow-sm">` : `<div class="w-10 h-10 rounded-full bg-slate-200 flex items-center justify-center text-slate-500 font-bold text-xs"><i class="fa-solid fa-user"></i></div>`;
-                tbody.innerHTML += `
-                    <tr class="border-b border-slate-100 hover:bg-slate-50">
-                        <td class="p-3 text-center">${fotoHtml}</td>
-                        <td class="p-3"><div class="font-bold text-slate-900">${escapeHtml(s.nome)}</div><div class="text-xs text-slate-500">CPF: ${escapeHtml(s.cpf)}</div></td>
-                        <td class="p-3"><div class="text-slate-700 font-medium">Lotação: ${escapeHtml(s.lotacao)}</div><div class="text-xs font-semibold text-blue-700">Comissionado: ${escapeHtml(s.cargoComissionado || 'Nenhum')}</div></td>
-                        <td class="p-3 text-xs text-slate-600 italic">${escapeHtml(s.observacoes || '-')}</td>
-                        <td class="p-3 text-center space-x-2">
-                            <button onclick="editarPessoa('${sId}')" class="text-indigo-600 hover:text-indigo-800 text-xs font-bold"><i class="fa-solid fa-pen"></i> Editar</button>
-                            <button onclick="removerPessoa('${sId}')" class="text-red-600 hover:text-red-800 text-xs font-bold"><i class="fa-solid fa-trash"></i> Excluir</button>
-                            <button onclick="cargosSalvarServidorOnline('${sId}')" class="text-cyan-700 hover:text-cyan-900 text-xs font-bold"><i class="fa-solid fa-cloud-arrow-up"></i> Online</button>
-                        </td>
-                    </tr>
-                `;
-            });
+                const fotoHtml = s.foto ? '<img loading="lazy" src="'+escapeHtml(s.foto)+'" class="w-10 h-10 rounded-full object-cover border shadow-sm">' : '<div class="w-10 h-10 rounded-full bg-slate-200 flex items-center justify-center text-slate-500 font-bold text-xs"><i class="fa-solid fa-user"></i></div>';
+                return '<tr class="border-b border-slate-100 hover:bg-slate-50">' +
+                    '<td class="p-3 text-center">'+fotoHtml+'</td>' +
+                    '<td class="p-3"><div class="font-bold text-slate-900">'+escapeHtml(s.nome)+'</div><div class="text-xs text-slate-500">CPF: '+escapeHtml(s.cpf)+'</div></td>' +
+                    '<td class="p-3"><div class="text-slate-700 font-medium">Lotação: '+escapeHtml(s.lotacao)+'</div><div class="text-xs font-semibold text-blue-700">Comissionado: '+escapeHtml(s.cargoComissionado || 'Nenhum')+'</div></td>' +
+                    '<td class="p-3 text-xs text-slate-600 italic">'+escapeHtml(s.observacoes || '-')+'</td>' +
+                    '<td class="p-3 text-center space-x-2"><button onclick="editarPessoa(\''+escapeHtml(sId)+'\')" class="text-indigo-600 hover:text-indigo-800 text-xs font-bold"><i class="fa-solid fa-pen"></i> Editar</button> <button onclick="removerPessoa(\''+escapeHtml(sId)+'\')" class="text-red-600 hover:text-red-800 text-xs font-bold"><i class="fa-solid fa-trash"></i> Excluir</button> <button onclick="cargosSalvarServidorOnline(\''+escapeHtml(sId)+'\')" class="text-cyan-700 hover:text-cyan-900 text-xs font-bold"><i class="fa-solid fa-cloud-arrow-up"></i> Online</button></td>' +
+                    '</tr>';
+            }).join('');
+            tbody.innerHTML = html;
         }
 
         function salvarOuAtualizarPessoa(e) {
@@ -543,7 +501,8 @@
                     if (foto) s.foto = foto;
                 }
             } else {
-                appData.servidores.push({ id: 'serv_' + Date.now(), cpf, nome, lotacao, cargoEfetivo, cargoComissionado, observacoes, foto });
+                const novoId = 'srv_' + (String(cpf).replace(/\D/g, '') || Date.now());
+                appData.servidores.push({ idServidor: novoId, id: novoId, cpf, nome, lotacao, cargoEfetivo, cargoComissionado, observacoes, foto });
             }
             cancelarEdicaoPessoa();
             salvarDados();
@@ -611,7 +570,8 @@
 
                             if (nome && nome.toLowerCase() !== 'nome') {
                                 novos.push({
-                                    id: 'rh_' + Date.now() + '_' + i,
+                                    idServidor: 'srv_' + (String(cpf).replace(/\D/g, '') || Date.now() + '_' + i),
+                                    id: 'srv_' + (String(cpf).replace(/\D/g, '') || Date.now() + '_' + i),
                                     cpf: cpf.trim(),
                                     nome: nome.trim(),
                                     lotacao: lotacao.trim(),
@@ -926,6 +886,6 @@
         }
 
         window.onload = carregarDados;
-    </script>
+    </script> 1458
 </body>
 </html>
