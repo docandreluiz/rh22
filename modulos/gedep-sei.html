@@ -933,7 +933,7 @@
                 const values=response.result.values||[]; const headers=values[0]||[];
                 if (!headers.length) throw new Error('A aba processos está vazia ou sem cabeçalho.');
                 const normal=key => String(key||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/[^a-z0-9]/g,'');
-                const aliases={assessor:['assessor','atribuicao','assessorrresponsavel','responsavel'],processo:['processo','processosei','numerosei'],recebimento:['recebimento','datarecebimento'],envio:['envio','dataenvio','datadeenvio'],prazo:['prazo','prazolimite','prazolimiteparaenvio','datalimite'],status:['status','situacao'],procedencia:['procedencia','origem'],destino:['destino'],assunto:['assunto','tema'],interessados:['interessados','interessado'],linhaRef:['linhadereferencia','linhareferencia','linharef'],recorrencia:['recorrencia']};
+                const aliases={assessor:['assessor','atribuicao','responsavel'],processo:['processo','processosei','numerosei'],recebimento:['recebimento','datarecebimento'],envio:['envio','dataenvio','datadeenvio'],prazo:['prazo','prazolimite','prazolimiteparaenvio','datalimite'],status:['status','situacao'],procedencia:['procedencia','origem'],destino:['destino'],assunto:['assunto'],interessados:['interessados','interessado'],linhaRef:['linhadereferencia','linhareferencia','linharef'],recorrencia:['recorrencia']};
                 const row=headers.map(function(header){ const h=normal(header); for(const campo of Object.keys(aliases)){ if(aliases[campo].includes(h)) return dados[campo]||''; } return ''; });
                 let processCol=-1; headers.forEach(function(h,i){if(aliases.processo.includes(normal(h)))processCol=i;});
                 const found=processCol>=0 ? values.slice(1).findIndex(function(r){return String(r[processCol]||'').trim()===dados.processo;}) : -1;
@@ -953,12 +953,12 @@
             gapi.client.sheets.spreadsheets.values.get({spreadsheetId:GEDEP_CONFIG.spreadsheetId,range:'processos!A:Z'}).then(function(response){
                 const values=response.result.values||[]; const headers=values[0]||[]; if(!headers.length) throw new Error('A aba processos está vazia ou sem cabeçalho.');
                 const normal=function(key){return String(key||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/[^a-z0-9]/g,'');};
-                const aliases={assessor:['assessor','atribuicao','assessorrresponsavel','responsavel'],processo:['processo','processosei','numerosei'],recebimento:['recebimento','datarecebimento'],envio:['envio','dataenvio','datadeenvio'],prazo:['prazo','prazolimite','prazolimiteparaenvio','datalimite'],status:['status','situacao'],procedencia:['procedencia','origem'],destino:['destino'],assunto:['assunto','tema'],interessados:['interessados','interessado'],linhaRef:['linhadereferencia','linhareferencia','linharef'],recorrencia:['recorrencia'],atualizadoEm:['atualizadoem','dataatualizacao'],atualizadoPor:['atualizadopor','responsavelalteracao']};
+                const aliases={assessor:['assessor','atribuicao','responsavel'],processo:['processo','processosei','numerosei'],recebimento:['recebimento','datarecebimento'],envio:['envio','dataenvio','datadeenvio'],prazo:['prazo','prazolimite','prazolimiteparaenvio','datalimite'],status:['status','situacao'],procedencia:['procedencia','origem'],destino:['destino'],assunto:['assunto'],interessados:['interessados','interessado'],linhaRef:['linhadereferencia','linhareferencia','linharef'],recorrencia:['recorrencia'],atualizadoEm:['atualizadoem','dataatualizacao'],atualizadoPor:['atualizadopor','responsavelalteracao']};
                 const processoCol=headers.findIndex(function(h){return aliases.processo.includes(normal(h));});
                 const existentes={}; if(processoCol>=0) values.slice(1).forEach(function(row,i){const n=String(row[processoCol]||'').trim();if(n)existentes[n]=i+2;});
-                const fazerLinha=function(item){return headers.map(function(header){const h=normal(header);for(const campo of Object.keys(aliases)){if(aliases[campo].includes(h))return item[campo]||'';}return '';});};
+                const fazerLinha=function(item,base){return headers.map(function(header,i){const h=normal(header);for(const campo of Object.keys(aliases)){if(aliases[campo].includes(h))return item[campo]||'';}return (base&&base[i])||'';});};
                 const updates=[]; const novos=[]; let ignorados=0;
-                registros.forEach(function(item){ const linha=fazerLinha(item); const rowNum=existentes[item.processo]; if(rowNum) updates.push({range:'processos!A'+rowNum+':Z'+rowNum, values:[linha]}); else novos.push(linha); });
+                registros.forEach(function(item){ const rowNum=existentes[item.processo]; const linha=fazerLinha(item, rowNum ? values[rowNum-1] : []); if(rowNum) updates.push({range:'processos!A'+rowNum+':Z'+rowNum, values:[linha]}); else novos.push(linha); });
                 seiStatus('Enviando em lote: '+updates.length+' atualizações e '+novos.length+' inclusões...');
                 let promessa=Promise.resolve();
                 if(updates.length) promessa=promessa.then(function(){ return gapi.client.sheets.spreadsheets.values.batchUpdate({spreadsheetId:GEDEP_CONFIG.spreadsheetId, resource:{valueInputOption:'USER_ENTERED', data:updates}}); });
@@ -1397,7 +1397,14 @@
         function analisarLinhaCSV(linha, separador = ';') { const campos = []; let atual = ''; let aspas = false; for (let i = 0; i < linha.length; i++) { const caractere = linha[i]; if (caractere === '"') { if (aspas && linha[i + 1] === '"') { atual += '"'; i++; } else { aspas = !aspas; } } else if (caractere === separador && !aspas) { campos.push(atual.trim()); atual = ''; } else { atual += caractere; } } campos.push(atual.trim()); return campos; }
         function separarCSV(texto) { return String(texto || '').replace(/^\uFEFF/, '').replace(/\r/g, '').split('\n').filter(linha => linha.trim() !== '').map(linha => analisarLinhaCSV(linha, ';')); }
         function localizarCabecalhoHistorico(linhas) { const obrigatorios = ['atribuicao', 'data recebimento', 'data envio', 'prazo limite para envio', 'status', 'procedencia', 'destino', 'processo sei']; const indice = linhas.findIndex(linha => { const cabecalhos = linha.map(normalizarCabecalhoCSV); return obrigatorios.slice(0, 4).every(nome => cabecalhos.includes(nome)) || (cabecalhos.includes('processo sei') && cabecalhos.includes('data recebimento')); }); return indice >= 0 ? indice : 0; }
-        function mapearLinhaHistorico(linha, cabecalhos, indiceLinha) { const posicoes = {}; cabecalhos.forEach((nome, indice) => { const chave = normalizarCabecalhoCSV(nome); if (chave && posicoes[chave] === undefined) posicoes[chave] = indice; }); const obter = (...nomes) => { for (const nome of nomes) { const indice = posicoes[normalizarCabecalhoCSV(nome)]; if (indice !== undefined) return linha[indice] ?? ''; } return ''; }; const statusOriginal = obter('status'); const destinoOriginal = obter('destino'); return aplicarEdicaoHistorico({ assessor: obter('atribuicao', 'assessor', 'assessor responsavel'), recebimento: obter('data recebimento', 'recebimento'), envio: obter('data de envio', 'data envio', 'envio'), prazo: obter('prazo limite para envio', 'prazo limite', 'data limite'), status: statusOriginal, statusCategoria: categorizarStatus(statusOriginal), procedencia: obter('procedencia', 'procedência'), destino: destinoOriginal, destinoCategoria: categorizarDestino(destinoOriginal), processo: obter('processo sei', 'numero sei', 'processo'), assunto: obter('assunto', 'tema'), linhaRef: obter('linha de referencia', 'linha referencia'), interessados: obter('interessados', 'interessado'), recorrencia: obter('recorrencia', 'recorrência') }, indiceLinha); }
+        function mapearLinhaHistorico(linha, cabecalhos, indiceLinha) {
+            const posicoes = {};
+            cabecalhos.forEach((nome, indice) => { const chave = normalizarCabecalhoCSV(nome); if (chave && posicoes[chave] === undefined) posicoes[chave] = indice; });
+            const obter = (...nomes) => { for (const nome of nomes) { const indice = posicoes[normalizarCabecalhoCSV(nome)]; if (indice !== undefined) return linha[indice] ?? ''; } return ''; };
+            const statusOriginal = obter('STATUS');
+            const destinoOriginal = obter('DESTINO');
+            return aplicarEdicaoHistorico({ assessor: obter('ATRIBUIÇÃO','ATRIBUICAO','ASSESSOR'), recebimento: obter('DATA RECEBIMENTO','RECEBIMENTO'), envio: obter('DATA DE ENVIO','ENVIO'), prazo: obter('PRAZO LIMITE PARA ENVIO','PRAZO LIMITE','DATA LIMITE'), status: statusOriginal, statusCategoria: categorizarStatus(statusOriginal), procedencia: obter('PROCEDÊNCIA','PROCEDENCIA'), destino: destinoOriginal, destinoCategoria: categorizarDestino(destinoOriginal), processo: obter('PROCESSO SEI','NÚMERO SEI','NUMERO SEI','PROCESSO'), assunto: obter('ASSUNTO'), linhaRef: obter('LINHA DE REFERÊNCIA','LINHA DE REFERENCIA'), interessados: obter('INTERESSADOS','INTERESSADO'), recorrencia: obter('RECORRÊNCIA','RECORRENCIA') }, indiceLinha);
+        }
 
         async function handleHistoricoExcelUpload(event) {
             const file = event.target.files[0];
@@ -1740,6 +1747,6 @@
 
         function normalizeText(s) { return String(s == null ? '' : s).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase().replace(/[^A-Z0-9]+/g, ' ').trim(); }
         function escapeHtml(text) { const map = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' }; return String(text).replace(/[&<>"']/g, m => map[m]); }
-    </script> 10
+    </script>
 </body>
 </html>
