@@ -639,11 +639,16 @@
             atualizarBadgeStatus();
         }
 
+        function fcpeTemFuncao(valor) {
+            const v = fcpeNorm(valor);
+            return !!v && !['nenhuma','nenhum','semfcpe','naopossui','naoaplicavel','n/a','na'].includes(v);
+        }
+
         function atualizarEstatisticas() {
             const el1 = document.getElementById('statTotalServidores');
             if (el1) el1.innerText = appData.servidores.length;
 
-            const totalAtivos = appData.servidores.filter(s => s.fcpeAtual && s.fcpeAtual !== 'NENHUMA').length;
+            const totalAtivos = appData.servidores.filter(s => fcpeTemFuncao(s.fcpeAtual)).length;
             const el2 = document.getElementById('statTotalAtivos');
             if (el2) el2.innerText = totalAtivos;
 
@@ -1206,7 +1211,7 @@
             if (!tbody) return;
             tbody.innerHTML = '';
 
-            const ativos = appData.servidores.filter(s => s.fcpeAtual && s.fcpeAtual !== 'NENHUMA');
+            const ativos = appData.servidores.filter(s => fcpeTemFuncao(s.fcpeAtual));
             const elOcupados = document.getElementById('gerTotalOcupados');
             if (elOcupados) elOcupados.innerText = ativos.length;
             const taxa = ((ativos.length / 145) * 100).toFixed(1);
@@ -1341,7 +1346,7 @@
 
         // Funções de Exportação para Excel (.xlsx)
         function exportarCotasExcel() {
-            const ativos = appData.servidores.filter(s => s.fcpeAtual && s.fcpeAtual !== 'NENHUMA');
+            const ativos = appData.servidores.filter(s => fcpeTemFuncao(s.fcpeAtual));
             const dados = cotasModelo.map(c => {
                 const ocupadasNivel = ativos.filter(s => s.fcpeAtual.toUpperCase() === c.nivel.toUpperCase()).length;
                 const livres = c.total - ocupadasNivel;
@@ -1472,6 +1477,6 @@
         window.onload = function() {
             carregarDados();
         };
-    </script>
+    </script>1520
 </body>
 </html>
