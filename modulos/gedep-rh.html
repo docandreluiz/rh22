@@ -809,32 +809,30 @@
 
         function rhSincronizar() {
             if (!rhAccessToken) { rhStatus('Faça login antes de buscar dados.', true); return; }
-            rhStatus('Buscando servidores online...');
-            gapi.client.sheets.spreadsheets.values.get({ spreadsheetId: GEDEP_CONFIG.spreadsheetId, range: 'servidores!A:Z' })
-                .then(function(response) {
-                    const values = response.result.values || [];
-                    if (!values.length) throw new Error('A aba servidores está vazia ou sem cabeçalho.');
-                    const headers = values[0];
-                    const records = values.slice(1).map(function(row) {
-                        const r = {}; headers.forEach(function(h, i) { r[h] = row[i] || ''; });
-                        return {
-                            'ID': r.id || '', 'NOME SERVIDOR': r.nome || '', 'CPF': r.cpf || '',
-                            'CARGO EFETIVO': r.cargo || '', 'CARGO COMISSIONADO': r.fcpeAtual || '',
-                            'NOME ÓRGÃO': r.lotacao || '', 'LOTAÇÃO': r.lotacao || '', 'ÁREA': r.areaAtual || '',
-                            'STATUS': r.statusMinuta || '', 'FOTO URL': r.fotoUrl || '', 'WHATSAPP': r.whatsappNumero || '',
-                            'RAMAL': '-', 'PROCESSOS SEI': ''
-                        };
-                    }).filter(function(r) { return r['NOME SERVIDOR']; });
-                    if (!confirm('Foram encontrados ' + records.length + ' servidores. Substituir a base local do RH?')) return;
-                    appData.records = records;
-                    appData.headers = Object.keys(records[0] || {});
-                    filteredRecords = [...records];
-                    processSEILinks();
-                    updateAllModules();
-                    saveCache();
-                    document.getElementById('file-status').innerText = records.length + ' servidores (Google Sheets)';
-                    rhStatus('Sincronizado: ' + records.length + ' servidores.');
-                }).catch(function(err) { const d = err && err.result && err.result.error ? (err.result.error.message || ('HTTP ' + err.result.error.code)) : (err.message || String(err)); rhStatus('Sheets: ' + d, true); console.error(err); });
+            rhStatus('Buscando servidores, ramais, fotos e processos online...');
+            const normal=function(v){return String(v||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/[^a-z0-9]/g,'');};
+            const get=function(obj,names){for(const name of names){const key=Object.keys(obj).find(k=>normal(k)===normal(name));if(key&&String(obj[key]||'').trim())return obj[key];}return '';};
+            Promise.all([
+                gapi.client.sheets.spreadsheets.values.get({spreadsheetId:GEDEP_CONFIG.spreadsheetId,range:'servidores!A:Z'}),
+                gapi.client.sheets.spreadsheets.values.get({spreadsheetId:GEDEP_CONFIG.spreadsheetId,range:'processos!A:Z'})
+            ]).then(function(responses){
+                const serverValues=responses[0].result.values||[], processValues=responses[1].result.values||[];
+                if(!serverValues.length) throw new Error('A aba servidores está vazia ou sem cabeçalho.');
+                const serverHeaders=serverValues[0];
+                const records=serverValues.slice(1).map(function(row){
+                    const raw={};serverHeaders.forEach(function(h,i){raw[h]=row[i]||'';});
+                    const record=Object.assign({},raw);
+                    record['ID']=get(raw,['id','ID']);record['NOME SERVIDOR']=get(raw,['nome','nome servidor','NOME SERVIDOR']);record['CPF']=get(raw,['cpf','CPF']);
+                    record['CARGO EFETIVO']=get(raw,['cargo','cargo efetivo','desc cargo efetivo']);record['DESC CARGO EFETIVO']=get(raw,['desc cargo efetivo','cargo efetivo','cargo']);
+                    record['CARGO COMISSIONADO']=get(raw,['fcpeAtual','cargo comissionado','função','funcao']);record['NOME ÓRGÃO']=get(raw,['lotacao','nome órgão','nome orgao']);record['LOTAÇÃO']=get(raw,['lotacao','lotação']);record['ÁREA']=get(raw,['areaAtual','área','area']);record['STATUS']=get(raw,['statusMinuta','status','situação funcional','situacao funcional']);
+                    record['FOTO URL']=get(raw,['fotoUrl','foto url','foto','foto base64','imagem']);record['WHATSAPP']=get(raw,['whatsappNumero','whatsapp','telefone']);record['RAMAL']=get(raw,['ramal','extensão','extensao','telefone interno'])||'-';
+                    return record;
+                }).filter(function(r){return r['NOME SERVIDOR'];});
+                const processHeaders=processValues[0]||[];
+                const seiProcessos=processValues.slice(1).map(function(row){const raw={};processHeaders.forEach(function(h,i){raw[h]=row[i]||'';});return {processo:get(raw,['processo','processo sei','processoSEI','numero sei']),interessados:get(raw,['interessados','interessado']),assunto:get(raw,['assunto']),status:get(raw,['status','situação','situacao']),recebimento:get(raw,['recebimento','data recebimento']),prazo:get(raw,['prazo','prazo limite','prazo limite para envio']),destino:get(raw,['destino']),raw:raw};}).filter(function(p){return p.processo||p.interessados;});
+                if(!confirm('Foram encontrados '+records.length+' servidores e '+seiProcessos.length+' processos. Substituir a base local do RH?')) return;
+                appData.records=records;appData.headers=serverHeaders.slice();appData.seiProcessos=seiProcessos;filteredRecords=records.slice();processSEILinks();updateAllModules();saveCache();document.getElementById('file-status').innerText=records.length+' servidores, '+seiProcessos.length+' processos (Google Sheets)';rhStatus('Sincronizado: servidores, ramais, fotos e processos.');
+            }).catch(function(err){const d=err&&err.result&&err.result.error?(err.result.error.message||('HTTP '+err.result.error.code)):(err.message||String(err));rhStatus('Sheets: '+d,true);console.error(err);});
         }
 
         function rhExportarPlanilha() {
@@ -842,12 +840,9 @@
             const records=appData.records||[]; if(!records.length){rhStatus('Não há registros carregados para exportar.',true);return;}
             if(!confirm('Enviar '+records.length+' servidores para a aba servidores? Registros com o mesmo ID serão atualizados.'))return;
             rhStatus('Preparando exportação em lote...');
-            gapi.client.sheets.spreadsheets.values.get({spreadsheetId:GEDEP_CONFIG.spreadsheetId,range:'servidores!A:Z'}).then(function(response){
-                const values=response.result.values||[],headers=values[0]||[];if(!headers.length)throw new Error('A aba servidores está vazia ou sem cabeçalho.');
-                const idCol=headers.findIndex(function(h){return String(h).toLowerCase()==='id';}), atuais={};if(idCol>=0)values.slice(1).forEach(function(row,i){if(row[idCol])atuais[String(row[idCol])]=i+2;});
-                const updates=[],novos=[];records.forEach(function(r){const obj={id:r['ID']||'',nome:r['NOME SERVIDOR']||'',cpf:r['CPF']||'',cargo:r['CARGO EFETIVO']||'',fcpeAtual:r['CARGO COMISSIONADO']||'',lotacao:r['LOTAÇÃO']||r['NOME ÓRGÃO']||'',areaAtual:r['ÁREA']||'',statusMinuta:r['STATUS']||'',fotoUrl:r['FOTO URL']||'',whatsappNumero:r['WHATSAPP']||'',atualizadoEm:new Date().toISOString(),atualizadoPor:rhEmail};const linha=headers.map(function(h){const k=String(h).toLowerCase();const map={id:'id',nome:'nome',cpf:'cpf',cargo:'cargo',fcpeatual:'fcpeAtual',lotacao:'lotacao',nomeorgao:'lotacao',area:'areaAtual',status:'statusMinuta',fotourl:'fotoUrl',whatsapp:'whatsappNumero',atualizadoem:'atualizadoEm',atualizadopor:'atualizadoPor'};return obj[map[k]]||'';});if(atuais[obj.id])updates.push({range:'servidores!A'+atuais[obj.id]+':Z'+atuais[obj.id],values:[linha]});else novos.push(linha);});
-                let promise=Promise.resolve();if(updates.length)promise=promise.then(function(){return gapi.client.sheets.spreadsheets.values.batchUpdate({spreadsheetId:GEDEP_CONFIG.spreadsheetId,resource:{valueInputOption:'USER_ENTERED',data:updates}});});if(novos.length)promise=promise.then(function(){return gapi.client.sheets.spreadsheets.values.append({spreadsheetId:GEDEP_CONFIG.spreadsheetId,range:'servidores!A:Z',valueInputOption:'USER_ENTERED',insertDataOption:'INSERT_ROWS',resource:{values:novos}});});return promise.then(function(){return{u:updates.length,n:novos.length};});
-            }).then(function(r){rhStatus('Exportação concluída: '+r.n+' incluídos e '+r.u+' atualizados.');alert('Exportação concluída.\nIncluídos: '+r.n+'\nAtualizados: '+r.u);}).catch(function(err){const d=err&&err.result&&err.result.error?(err.result.error.message||('HTTP '+err.result.error.code)):(err.message||String(err));rhStatus('Sheets: '+d,true);alert('Não foi possível exportar: '+d);});
+            const normal=function(v){return String(v||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/[^a-z0-9]/g,'');};
+            const valueFor=function(record,header){const n=normal(header);const direct=Object.keys(record).find(k=>normal(k)===n);if(direct&&typeof record[direct]!=='object')return record[direct]||'';const aliases={id:['id'],nome:['nome','nomeservidor'],cpf:['cpf'],cargo:['cargo','cargoefetivo','desccargoefetivo'],fcpeAtual:['fcpeatual','cargocomissionado'],lotacao:['lotacao','nomeorgao'],areaAtual:['areaatual','area'],statusMinuta:['statusminuta','status','situacaofuncional'],fotoUrl:['fotourl','foto','fotobase64','imagem'],whatsappNumero:['whatsappnumero','whatsapp','telefone'],ramal:['ramal','extensao','telefoneinterno'],atualizadoEm:['atualizadoem','dataatualizacao'],atualizadoPor:['atualizadopor','responsavelalteracao'],'PROCESSOS SEI':['processosei','processossei']};for(const campo of Object.keys(aliases))if(aliases[campo].includes(n)){if(campo==='PROCESSOS SEI')return Array.isArray(record[campo])?record[campo].map(p=>p.processo||'').join(', '):(record[campo]||'');return record[campo]||'';}return '';};
+            gapi.client.sheets.spreadsheets.values.get({spreadsheetId:GEDEP_CONFIG.spreadsheetId,range:'servidores!A:Z'}).then(function(response){const values=response.result.values||[],headers=values[0]||[];if(!headers.length)throw new Error('A aba servidores está vazia ou sem cabeçalho.');const idCol=headers.findIndex(h=>normal(h)==='id'),atuais={};if(idCol>=0)values.slice(1).forEach(function(row,i){if(row[idCol])atuais[String(row[idCol])]=i+2;});const updates=[],novos=[];records.forEach(function(record){const id=valueFor(record,'id'),base=atuais[id]?values[atuais[id]-1]:[];const linha=headers.map(function(h,i){const novo=valueFor(record,h);return novo!==''?novo:(base[i]||'');});if(atuais[id])updates.push({range:'servidores!A'+atuais[id]+':Z'+atuais[id],values:[linha]});else novos.push(linha);});let promise=Promise.resolve();if(updates.length)promise=promise.then(function(){return gapi.client.sheets.spreadsheets.values.batchUpdate({spreadsheetId:GEDEP_CONFIG.spreadsheetId,resource:{valueInputOption:'USER_ENTERED',data:updates}});});if(novos.length)promise=promise.then(function(){return gapi.client.sheets.spreadsheets.values.append({spreadsheetId:GEDEP_CONFIG.spreadsheetId,range:'servidores!A:Z',valueInputOption:'USER_ENTERED',insertDataOption:'INSERT_ROWS',resource:{values:novos}});});return promise.then(function(){return{u:updates.length,n:novos.length};});}).then(function(r){rhStatus('Exportação concluída: '+r.n+' incluídos e '+r.u+' atualizados.');alert('Exportação concluída.\nIncluídos: '+r.n+'\nAtualizados: '+r.u);}).catch(function(err){const d=err&&err.result&&err.result.error?(err.result.error.message||('HTTP '+err.result.error.code)):(err.message||String(err));rhStatus('Sheets: '+d,true);alert('Não foi possível exportar: '+d);});
         }
 
         function rhLogout() {
