@@ -1004,31 +1004,12 @@
         }
 
         function renderTabelaServidores() {
-            const filtro = document.getElementById('searchServidor')?.value.toLowerCase() || '';
-            const tbody = document.getElementById('tabelaServidoresBody');
-            if (!tbody) return;
-            tbody.innerHTML = '';
-            const filtrados = appData.servidores.filter(s => s.nome.toLowerCase().includes(filtro) || s.cpf.includes(filtro) || s.lotacao.toLowerCase().includes(filtro));
-            if (filtrados.length === 0) {
-                tbody.innerHTML = `<tr><td colspan="5" class="p-4 text-center text-slate-400">Nenhum servidor encontrado.</td></tr>`;
-                return;
-            }
-            filtrados.forEach(s => {
-                tbody.innerHTML += `
-                    <tr class="border-b border-slate-100 hover:bg-slate-50">
-                        <td class="p-3 font-medium text-slate-900">${escapeHtml(s.nome)}</td>
-                        <td class="p-3 text-slate-600">${escapeHtml(s.cpf)}</td>
-                        <td class="p-3 text-slate-600">${escapeHtml(s.cargo)}</td>
-                        <td class="p-3 text-slate-600">${escapeHtml(s.lotacao)}</td>
-                        <td class="p-3 text-center space-x-2">
-                            <button onclick="verHistoricoServidor('${s.id}')" class="text-purple-600 hover:text-purple-800 text-xs font-semibold mr-1" title="Ver Histórico"><i class="fa-solid fa-clock-rotate-left mr-1"></i> Histórico</button>
-                            <button onclick="editarServidor('${s.id}')" class="text-blue-600 hover:text-blue-800"><i class="fa-solid fa-pen"></i></button>
-                            <button onclick="excluirServidor('${s.id}')" class="text-red-600 hover:text-red-800"><i class="fa-solid fa-trash"></i></button>
-                        </td>
-                    </tr>
-                `;
-            });
+            const filtro=(document.getElementById('searchServidor')?.value||'').toLowerCase().trim();const tbody=document.getElementById('tabelaServidoresBody');if(!tbody)return;
+            const filtrados=appData.servidores.filter(function(s){return !filtro||String(s.nome||'').toLowerCase().includes(filtro)||String(s.cpf||'').toLowerCase().includes(filtro)||String(s.lotacao||'').toLowerCase().includes(filtro);});
+            if(!filtrados.length){tbody.innerHTML='<tr><td colspan="5" class="p-4 text-center text-slate-400">Nenhum servidor encontrado.</td></tr>';return;}
+            tbody.innerHTML=filtrados.map(function(s){return '<tr class="border-b border-slate-100 hover:bg-slate-50"><td class="p-3 font-medium text-slate-900">'+escapeHtml(s.nome)+'</td><td class="p-3 text-slate-600">'+escapeHtml(s.cpf)+'</td><td class="p-3 text-slate-600">'+escapeHtml(s.cargo)+'</td><td class="p-3 text-slate-600">'+escapeHtml(s.lotacao)+'</td><td class="p-3 text-center space-x-2"><button onclick="verHistoricoServidor(\''+escapeHtml(s.id)+'\')" class="text-purple-600 text-xs font-semibold mr-1">Histórico</button><button onclick="editarServidor(\''+escapeHtml(s.id)+'\')" class="text-blue-600"><i class="fa-solid fa-pen"></i></button><button onclick="excluirServidor(\''+escapeHtml(s.id)+'\')" class="text-red-600"><i class="fa-solid fa-trash"></i></button></td></tr>';}).join('');
         }
+
 
         function salvarFcpe(e) {
             e.preventDefault();
@@ -1074,41 +1055,16 @@
         }
 
         function renderTabelaFcpes() {
-            const tbody = document.getElementById('tabelaFcpesBody');
-            if (!tbody) return;
-            tbody.innerHTML = '';
-            if (appData.fcpes.length === 0) {
-                tbody.innerHTML = `<tr><td colspan="4" class="p-4 text-center text-slate-400">Nenhuma FCPE cadastrada.</td></tr>`;
-                return;
-            }
-            appData.fcpes.forEach(f => {
-                tbody.innerHTML += `
-                    <tr class="border-b border-slate-100 hover:bg-slate-50">
-                        <td class="p-3 font-bold text-slate-900">${escapeHtml(f.nivel)}</td>
-                        <td class="p-3 text-slate-600">${escapeHtml(f.area)}</td>
-                        <td class="p-3 text-slate-600 text-xs">${escapeHtml(f.atribuicoes)}</td>
-                        <td class="p-3 text-center space-x-2">
-                            <button onclick="editarFcpe('${f.id}')" class="text-blue-600 hover:text-blue-800"><i class="fa-solid fa-pen"></i></button>
-                            <button onclick="excluirFcpe('${f.id}')" class="text-red-600 hover:text-red-800"><i class="fa-solid fa-trash"></i></button>
-                        </td>
-                    </tr>
-                `;
-            });
+            const tbody=document.getElementById('tabelaFcpesBody');if(!tbody)return;if(!appData.fcpes.length){tbody.innerHTML='<tr><td colspan="4" class="p-4 text-center text-slate-400">Nenhuma FCPE cadastrada.</td></tr>';return;}
+            tbody.innerHTML=appData.fcpes.map(function(f){return '<tr class="border-b border-slate-100 hover:bg-slate-50"><td class="p-3 font-bold text-slate-900">'+escapeHtml(f.nivel)+'</td><td class="p-3 text-slate-600">'+escapeHtml(f.area)+'</td><td class="p-3 text-slate-600 text-xs">'+escapeHtml(f.atribuicoes)+'</td><td class="p-3 text-center space-x-2"><button onclick="editarFcpe(\''+escapeHtml(f.id)+'\')" class="text-blue-600"><i class="fa-solid fa-pen"></i></button><button onclick="excluirFcpe(\''+escapeHtml(f.id)+'\')" class="text-red-600"><i class="fa-solid fa-trash"></i></button></td></tr>';}).join('');
         }
+
 
         function renderSelects() {
-            const selServ = document.getElementById('lancServidorId');
-            if (selServ) {
-                selServ.innerHTML = '<option value="">Selecione o servidor...</option>';
-                appData.servidores.forEach(s => { selServ.innerHTML += `<option value="${s.id}">${escapeHtml(s.nome)} (${s.cpf})</option>`; });
-            }
-
-            const selFcpe = document.getElementById('lancFcpeId');
-            if (selFcpe) {
-                selFcpe.innerHTML = '<option value="">Selecione a FCPE...</option>';
-                appData.fcpes.forEach(f => { selFcpe.innerHTML += `<option value="${f.id}">${escapeHtml(f.nivel)} - ${escapeHtml(f.area)}</option>`; });
-            }
+            const selServ=document.getElementById('lancServidorId');if(selServ)selServ.innerHTML='<option value="">Selecione o servidor...</option>'+appData.servidores.map(function(s){return '<option value="'+escapeHtml(s.id)+'">'+escapeHtml(s.nome)+' ('+escapeHtml(s.cpf)+')</option>';}).join('');
+            const selFcpe=document.getElementById('lancFcpeId');if(selFcpe)selFcpe.innerHTML='<option value="">Selecione a FCPE...</option>'+appData.fcpes.map(function(f){return '<option value="'+escapeHtml(f.id)+'">'+escapeHtml(f.nivel)+' - '+escapeHtml(f.area)+'</option>';}).join('');
         }
+
 
         function toggleCampofcpeAnterior() {
             const acao = document.getElementById('lancAcao').value;
@@ -1143,35 +1099,10 @@
         }
 
         function renderTabelalancamentos() {
-            const tbody = document.getElementById('tabelaLancamentosBody');
-            if (!tbody) return;
-            tbody.innerHTML = '';
-            if (appData.lancamentos.length === 0) {
-                tbody.innerHTML = `<tr><td colspan="5" class="p-4 text-center text-slate-400">Nenhum lançamento no lote da portaria.</td></tr>`;
-                return;
-            }
-            appData.lancamentos.forEach(l => {
-                const s = appData.servidores.find(item => item.id === l.servidorId);
-                const f = appData.fcpes.find(item => item.id === l.fcpeId);
-                const nomeServ = s ? s.nome : 'Desconhecido';
-                const cargoLot = s ? `${s.cargo} / ${s.lotacao}` : '';
-                const nivelFcpe = f ? (l.acao === 'ALTERAR' ? `${l.fcpeAnterior} para ${f.nivel}` : f.nivel) : '';
-
-                let badgeColor = 'bg-blue-100 text-blue-800';
-                if (l.acao === 'INCLUIR') badgeColor = 'bg-green-100 text-green-800';
-                if (l.acao === 'EXCLUIR') badgeColor = 'bg-red-100 text-red-800';
-
-                tbody.innerHTML += `
-                    <tr class="border-b border-slate-100 hover:bg-slate-50">
-                        <td class="p-3 font-medium text-slate-900">${escapeHtml(nomeServ)}</td>
-                        <td class="p-3 text-slate-600 text-xs">${escapeHtml(cargoLot)}</td>
-                        <td class="p-3"><span class="px-2 py-0.5 rounded text-xs font-bold ${badgeColor}">${escapeHtml(l.acao)}</span></td>
-                        <td class="p-3 font-semibold text-slate-800">${escapeHtml(nivelFcpe)}</td>
-                        <td class="p-3 text-center"><button onclick="removerLancamento('${l.id}')" class="text-red-600 hover:text-red-800"><i class="fa-solid fa-trash"></i></button></td>
-                    </tr>
-                `;
-            });
+            const tbody=document.getElementById('tabelaLancamentosBody');if(!tbody)return;if(!appData.lancamentos.length){tbody.innerHTML='<tr><td colspan="5" class="p-4 text-center text-slate-400">Nenhum lançamento no lote da portaria.</td></tr>';return;}
+            tbody.innerHTML=appData.lancamentos.map(function(l){const sv=appData.servidores.find(function(x){return x.id===l.servidorId||x.idServidor===l.servidorId;}),f=appData.fcpes.find(function(x){return x.id===l.fcpeId;}),nome=sv?sv.nome:'Desconhecido',cargoLot=sv?(sv.cargo+' / '+sv.lotacao):'',nivel=f?(l.acao==='ALTERAR'?l.fcpeAnterior+' para '+f.nivel:f.nivel):'',cor=l.acao==='INCLUIR'?'bg-green-100 text-green-800':(l.acao==='EXCLUIR'?'bg-red-100 text-red-800':'bg-blue-100 text-blue-800');return '<tr class="border-b border-slate-100 hover:bg-slate-50"><td class="p-3 font-medium text-slate-900">'+escapeHtml(nome)+'</td><td class="p-3 text-slate-600 text-xs">'+escapeHtml(cargoLot)+'</td><td class="p-3"><span class="px-2 py-0.5 rounded text-xs font-bold '+cor+'">'+escapeHtml(l.acao)+'</span></td><td class="p-3 font-semibold text-slate-800">'+escapeHtml(nivel)+'</td><td class="p-3 text-center"><button onclick="removerLancamento(\''+escapeHtml(l.id)+'\')" class="text-red-600"><i class="fa-solid fa-trash"></i></button></td></tr>';}).join('');
         }
+
 
         function atualizarMinutaTextos() {
             const numero = document.getElementById('minutaNumero')?.value || '135';
@@ -1541,6 +1472,6 @@
         window.onload = function() {
             carregarDados();
         };
-    </script>1504
+    </script>
 </body>
 </html>
