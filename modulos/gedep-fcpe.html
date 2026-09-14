@@ -19,6 +19,7 @@
             .tab-content { display: block !important; }
         }
     </style>
+    <script src="../gedep-ficha.js"></script>
 </head>
 
     <a href="../index.html" aria-label="Voltar ao Hub GEDEP" style="position:fixed;right:14px;bottom:14px;z-index:99999;background:#0f172a;color:#fff;text-decoration:none;padding:9px 13px;border-radius:8px;border:1px solid #334155;font:600 12px Arial;box-shadow:0 4px 12px rgba(0,0,0,.18);">← Hub GEDEP</a>
@@ -1344,7 +1345,7 @@
                             <td class="p-3 font-bold text-green-700">${escapeHtml(s.fcpeAtual || 'NENHUMA')}</td>
                             <td class="p-3 font-semibold text-slate-700">${escapeHtml(s.statusMinuta || appData.statusGlobalMinuta || 'Em elaboração')}</td>
                             <td class="p-3 text-center space-x-1">
-                                <button onclick="verHistoricoServidor('${s.id}')" class="bg-purple-50 text-purple-700 hover:bg-purple-100 px-2.5 py-1.5 rounded text-xs font-semibold border border-purple-200 transition" title="Histórico"><i class="fa-solid fa-clock-rotate-left mr-1"></i> Histórico</button>
+                                <button onclick="gedepAbrirFicha('fcpe','${s.id}')" class="bg-slate-50 text-slate-700 px-2.5 py-1.5 rounded text-xs font-semibold border border-slate-200" title="Ficha pessoal"><i class="fa-solid fa-id-card mr-1"></i> Ficha</button> <button onclick="verHistoricoServidor('${s.id}')" class="bg-purple-50 text-purple-700 hover:bg-purple-100 px-2.5 py-1.5 rounded text-xs font-semibold border border-purple-200 transition" title="Histórico"><i class="fa-solid fa-clock-rotate-left mr-1"></i> Histórico</button>
                                 <button onclick="ativarEdicaoLinha('${s.id}')" class="bg-blue-50 text-blue-600 hover:bg-blue-100 px-2.5 py-1.5 rounded text-xs font-semibold border border-blue-200 transition" title="Editar linha"><i class="fa-solid fa-pen-to-square mr-1"></i> Editar</button>
                                 <button onclick="salvarServidorOnline('${s.id}')" class="bg-cyan-50 text-cyan-700 hover:bg-cyan-100 px-2.5 py-1.5 rounded text-xs font-semibold border border-cyan-200 transition" title="Gravar este servidor na planilha"><i class="fa-solid fa-cloud-arrow-up mr-1"></i> Online</button>
                             </td>

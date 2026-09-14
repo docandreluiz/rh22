@@ -124,6 +124,7 @@
             }
         }
     </style>
+    <script src="../gedep-ficha.js"></script>
 </head>
 
     <a href="../index.html" aria-label="Voltar ao Hub GEDEP" style="position:fixed;right:14px;bottom:14px;z-index:99999;background:#0f172a;color:#fff;text-decoration:none;padding:9px 13px;border-radius:8px;border:1px solid #334155;font:600 12px Arial;box-shadow:0 4px 12px rgba(0,0,0,.18);">← Hub GEDEP</a>
@@ -1298,6 +1299,7 @@
                     <td><span style="background: #eff6ff; color: #1e40af; padding: 0.2rem 0.5rem; border-radius: 0.25rem; font-weight: bold;">${escapeHtml(r['RAMAL'] || '-')}</span></td>
                     <td><span style="background: #fdf4ff; color: #86198f; padding: 0.2rem 0.5rem; border-radius: 0.25rem; font-weight: bold;">${procCount} proc(s)</span></td>
                     <td>${escapeHtml(r['DESC SIT FUNCIONAL'])}</td>
+                    <td><button onclick="gedepAbrirFicha('rh', encodeURIComponent(r['idServidor'] || r['CPF'] || r['NOME SERVIDOR']))" class="btn btn-blue" style="padding:.25rem .6rem;font-size:.75rem">Ficha</button></td>
                 </tr>`;
             });
             tbody.innerHTML = html;
@@ -2042,4 +2044,4 @@
         };
     </script>
 </body>
-1440</html>
+</html>
