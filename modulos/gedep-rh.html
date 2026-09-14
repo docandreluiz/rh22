@@ -1200,16 +1200,22 @@
         }
 
         function processSEILinks() {
+            const compacto=function(valor){return String(valor||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toUpperCase().replace(/[^A-Z0-9]/g,'');};
             appData.records.forEach(function(r) {
                 const nomeServidor=normalizeText(r['NOME SERVIDOR']||r['NOME']||'');
+                const nomeCompacto=compacto(nomeServidor);
                 const cpfServidor=String(r['CPF']||'').replace(/\D/g,'');
                 const processosDoServidor=(appData.seiProcessos||[]).filter(function(p){
-                    const interessados=normalizeText(p.interessados||'');
-                    const cpfInteressado=String(p.cpf||p.interessados||'').replace(/\D/g,'');
-                    const nomes=interessados.split(/\s*[,;\n]\s*/).map(normalizeText).filter(Boolean);
-                    const nomeExato=nomeServidor && nomes.some(function(nome){return nome===nomeServidor || nome.includes(nomeServidor) || nomeServidor.includes(nome);});
-                    const cpfExato=cpfServidor.length>=9 && cpfInteressado.includes(cpfServidor);
-                    return Boolean(nomeExato||cpfExato);
+                    const interessados=String(p.interessados||'');
+                    const interessadosNormalizados=normalizeText(interessados);
+                    const interessadosCompactos=compacto(interessados);
+                    const cpfInteressado=String(p.cpf||'').replace(/\D/g,'');
+                    const nomeExato=Boolean(nomeServidor && (
+                        interessadosNormalizados.includes(nomeServidor) ||
+                        interessadosCompactos.includes(nomeCompacto)
+                    ));
+                    const cpfExato=Boolean(cpfServidor.length>=9 && (cpfInteressado.includes(cpfServidor) || String(p.raw&&JSON.stringify(p.raw)||'').replace(/\D/g,'').includes(cpfServidor)));
+                    return nomeExato || cpfExato;
                 });
                 r['PROCESSOS_SEI']=processosDoServidor;
                 r['TOTAL_PROCESSOS']=processosDoServidor.length;
@@ -2047,5 +2053,5 @@
             }
         };
     </script>
-</body> 1122
-</html>
+</body>
+1323</html>
