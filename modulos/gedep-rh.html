@@ -140,6 +140,7 @@
                 <button id="btnRhLogin" onclick="rhLogin()" class="btn btn-dark">Entrar com Google</button>
                 <button id="btnRhSync" onclick="rhSincronizar()" class="btn btn-blue" style="display:none">Buscar servidores online</button>
                 <button id="btnRhExport" onclick="rhExportarPlanilha()" class="btn btn-green" style="display:none">Enviar base para planilha</button>
+                <button id="btnRhExportRamais" onclick="rhExportarRamaisPlanilha()" class="btn btn-green" style="display:none">Enviar ramais para planilha</button>
                 <button id="btnRhLogout" onclick="rhLogout()" class="btn btn-gray" style="display:none">Sair</button>
                 <span id="rhGoogleStatus" style="font-size:0.72rem" aria-live="polite"></span>
             </div>
@@ -795,6 +796,7 @@
                                         document.getElementById('btnRhLogin').style.display = 'none';
                                         document.getElementById('btnRhSync').style.display = 'inline-block';
                                         document.getElementById('btnRhExport').style.display = 'inline-block';
+                                        document.getElementById('btnRhExportRamais').style.display = 'inline-block';
                                         document.getElementById('btnRhLogout').style.display = 'inline-block';
                                         rhStatus('Conectado: ' + rhEmail);
                                     }).catch(function(err) { rhStatus(err.message, true); });
@@ -812,11 +814,13 @@
             rhStatus('Buscando servidores, ramais, fotos e processos online...');
             const normal=function(v){return String(v||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/[^a-z0-9]/g,'');};
             const get=function(obj,names){for(const name of names){const key=Object.keys(obj).find(k=>normal(k)===normal(name));if(key&&String(obj[key]||'').trim())return obj[key];}return '';};
+            const lerOpcional=function(range){return gapi.client.sheets.spreadsheets.values.get({spreadsheetId:GEDEP_CONFIG.spreadsheetId,range:range}).catch(function(){return {result:{values:[]}};});};
             Promise.all([
-                gapi.client.sheets.spreadsheets.values.get({spreadsheetId:GEDEP_CONFIG.spreadsheetId,range:'servidores!A:Z'}),
-                gapi.client.sheets.spreadsheets.values.get({spreadsheetId:GEDEP_CONFIG.spreadsheetId,range:'processos!A:Z'})
+                lerOpcional('servidores!A:Z'),
+                lerOpcional('processos!A:Z'),
+                lerOpcional('ramais!A:Z')
             ]).then(function(responses){
-                const serverValues=responses[0].result.values||[], processValues=responses[1].result.values||[];
+                const serverValues=responses[0].result.values||[], processValues=responses[1].result.values||[], ramalValues=responses[2].result.values||[];
                 if(!serverValues.length) throw new Error('A aba servidores está vazia ou sem cabeçalho.');
                 const serverHeaders=serverValues[0];
                 const records=serverValues.slice(1).map(function(row){
@@ -828,8 +832,11 @@
                     record['FOTO URL']=get(raw,['fotoUrl','foto url','foto','foto base64','imagem']);record['WHATSAPP']=get(raw,['whatsappNumero','whatsapp','telefone']);record['RAMAL']=get(raw,['ramal','extensão','extensao','telefone interno'])||'-';
                     return record;
                 }).filter(function(r){return r['NOME SERVIDOR'];});
+                const ramalHeaders=ramalValues[0]||[];
+                const ramais=ramalValues.slice(1).map(function(row){const raw={};ramalHeaders.forEach(function(h,i){raw[h]=row[i]||'';});return {nome:get(raw,['Nome','NOME']),lotacao:get(raw,['Lotação','Lotacao']),sigla:get(raw,['Sigla']),ramal:get(raw,['Ramal'])};}).filter(function(r){return r.nome||r.ramal;});
+                records.forEach(function(record){const nome=normal(record['NOME SERVIDOR']),lotacao=normal(record['LOTAÇÃO']);const item=ramais.find(function(r){return normal(r.nome)===nome && (!lotacao || !r.lotacao || normal(r.lotacao)===lotacao);}) || ramais.find(function(r){return normal(r.nome)===nome;});if(item){record['RAMAL']=item.ramal||record['RAMAL']||'-';record['SIGLA']=item.sigla||'';record['LOTAÇÃO RAMAL']=item.lotacao||record['LOTAÇÃO'];}});
                 const processHeaders=processValues[0]||[];
-                const seiProcessos=processValues.slice(1).map(function(row){const raw={};processHeaders.forEach(function(h,i){raw[h]=row[i]||'';});return {processo:get(raw,['processo','processo sei','processoSEI','numero sei']),interessados:get(raw,['interessados','interessado']),assunto:get(raw,['assunto']),status:get(raw,['status','situação','situacao']),recebimento:get(raw,['recebimento','data recebimento']),prazo:get(raw,['prazo','prazo limite','prazo limite para envio']),destino:get(raw,['destino']),raw:raw};}).filter(function(p){return p.processo||p.interessados;});
+                const seiProcessos=processValues.slice(1).map(function(row){const raw={};processHeaders.forEach(function(h,i){raw[h]=row[i]||'';});return {processo:get(raw,['processo','processo sei','processoSEI','numero sei']),interessados:get(raw,['interessados','interessado','nome interessado']),cpf:get(raw,['cpf','cpf interessado']),assunto:get(raw,['assunto']),status:get(raw,['status','situação','situacao']),recebimento:get(raw,['recebimento','data recebimento']),prazo:get(raw,['prazo','prazo limite','prazo limite para envio']),destino:get(raw,['destino']),raw:raw};}).filter(function(p){return p.processo||p.interessados;});
                 if(!confirm('Foram encontrados '+records.length+' servidores e '+seiProcessos.length+' processos. Substituir a base local do RH?')) return;
                 appData.records=records;appData.headers=serverHeaders.slice();appData.seiProcessos=seiProcessos;filteredRecords=records.slice();processSEILinks();updateAllModules();saveCache();document.getElementById('file-status').innerText=records.length+' servidores, '+seiProcessos.length+' processos (Google Sheets)';rhStatus('Sincronizado: servidores, ramais, fotos e processos.');
             }).catch(function(err){const d=err&&err.result&&err.result.error?(err.result.error.message||('HTTP '+err.result.error.code)):(err.message||String(err));rhStatus('Sheets: '+d,true);console.error(err);});
@@ -845,6 +852,14 @@
             gapi.client.sheets.spreadsheets.values.get({spreadsheetId:GEDEP_CONFIG.spreadsheetId,range:'servidores!A:Z'}).then(function(response){const values=response.result.values||[],headers=values[0]||[];if(!headers.length)throw new Error('A aba servidores está vazia ou sem cabeçalho.');const idCol=headers.findIndex(h=>normal(h)==='id'),atuais={};if(idCol>=0)values.slice(1).forEach(function(row,i){if(row[idCol])atuais[String(row[idCol])]=i+2;});const updates=[],novos=[];records.forEach(function(record){const id=valueFor(record,'id'),base=atuais[id]?values[atuais[id]-1]:[];const linha=headers.map(function(h,i){const novo=valueFor(record,h);return novo!==''?novo:(base[i]||'');});if(atuais[id])updates.push({range:'servidores!A'+atuais[id]+':Z'+atuais[id],values:[linha]});else novos.push(linha);});let promise=Promise.resolve();if(updates.length)promise=promise.then(function(){return gapi.client.sheets.spreadsheets.values.batchUpdate({spreadsheetId:GEDEP_CONFIG.spreadsheetId,resource:{valueInputOption:'USER_ENTERED',data:updates}});});if(novos.length)promise=promise.then(function(){return gapi.client.sheets.spreadsheets.values.append({spreadsheetId:GEDEP_CONFIG.spreadsheetId,range:'servidores!A:Z',valueInputOption:'USER_ENTERED',insertDataOption:'INSERT_ROWS',resource:{values:novos}});});return promise.then(function(){return{u:updates.length,n:novos.length};});}).then(function(r){rhStatus('Exportação concluída: '+r.n+' incluídos e '+r.u+' atualizados.');alert('Exportação concluída.\nIncluídos: '+r.n+'\nAtualizados: '+r.u);}).catch(function(err){const d=err&&err.result&&err.result.error?(err.result.error.message||('HTTP '+err.result.error.code)):(err.message||String(err));rhStatus('Sheets: '+d,true);alert('Não foi possível exportar: '+d);});
         }
 
+        function rhExportarRamaisPlanilha() {
+            if(!rhAccessToken){rhStatus('Faça login antes de exportar ramais.',true);return;}
+            const ramais=Object.keys(appData.ramaisMap||{});if(!ramais.length){rhStatus('Importe a relação de ramais antes de exportar.',true);return;}
+            const porChave={};(appData.records||[]).forEach(function(r){const cpf=String(r['CPF']||'').replace(/\D/g,'');const nome=String(r['NOME SERVIDOR']||'').trim().toUpperCase();const valor=appData.ramaisMap[cpf]||appData.ramaisMap[nome];if(valor)porChave[cpf||nome]={nome:r['NOME SERVIDOR']||'',lotacao:r['LOTAÇÃO']||r['NOME ÓRGÃO']||'',sigla:r['SIGLA']||'',ramal:valor};});
+            const linhas=Object.keys(porChave).map(function(k){return porChave[k];}).filter(function(r){return r.nome&&r.ramal;});if(!linhas.length){alert('Não foi possível associar ramais a servidores.');return;}if(!confirm('Enviar '+linhas.length+' ramais para a aba ramais?'))return;
+            rhStatus('Enviando ramais em lote...');gapi.client.sheets.spreadsheets.values.get({spreadsheetId:GEDEP_CONFIG.spreadsheetId,range:'ramais!A:Z'}).then(function(response){const values=response.result.values||[],headers=values[0]||['Nome','Lotação','Sigla','Ramal'];const norm=v=>String(v||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/[^a-z0-9]/g,'');const idx={};headers.forEach(function(h,i){idx[norm(h)]=i;});const nomeCol=idx.nome??idx.nomeservidor, atuais={};if(nomeCol!==undefined)values.slice(1).forEach(function(row,i){if(row[nomeCol])atuais[norm(row[nomeCol])]=i+2;});const updates=[],novos=[];linhas.forEach(function(item){const linha=headers.map(function(h){const n=norm(h);return n==='nome'||n==='nomeservidor'?item.nome:n==='lotacao'?item.lotacao:n==='sigla'?item.sigla:n==='ramal'?item.ramal:'';});if(atuais[norm(item.nome)])updates.push({range:'ramais!A'+atuais[norm(item.nome)]+':Z'+atuais[norm(item.nome)],values:[linha]});else novos.push(linha);});let promise=Promise.resolve();if(updates.length)promise=promise.then(function(){return gapi.client.sheets.spreadsheets.values.batchUpdate({spreadsheetId:GEDEP_CONFIG.spreadsheetId,resource:{valueInputOption:'USER_ENTERED',data:updates}});});if(novos.length)promise=promise.then(function(){return gapi.client.sheets.spreadsheets.values.append({spreadsheetId:GEDEP_CONFIG.spreadsheetId,range:'ramais!A:Z',valueInputOption:'USER_ENTERED',insertDataOption:'INSERT_ROWS',resource:{values:novos}});});return promise.then(function(){return{u:updates.length,n:novos.length};});}).then(function(r){rhStatus('Ramais enviados: '+(r.n+r.u)+'.');alert('Ramais enviados para a aba ramais.\nIncluídos: '+r.n+'\nAtualizados: '+r.u);}).catch(function(err){const d=err&&err.result&&err.result.error?(err.result.error.message||('HTTP '+err.result.error.code)):(err.message||String(err));rhStatus('Sheets: '+d,true);alert('Não foi possível enviar ramais: '+d);});
+        }
+
         function rhLogout() {
             if (rhAccessToken && window.google && google.accounts && google.accounts.oauth2) google.accounts.oauth2.revoke(rhAccessToken);
             rhAccessToken = null; rhEmail = '';
@@ -852,6 +867,7 @@
             document.getElementById('btnRhLogin').style.display = 'inline-block';
             document.getElementById('btnRhSync').style.display = 'none';
             document.getElementById('btnRhExport').style.display = 'none';
+            document.getElementById('btnRhExportRamais').style.display = 'none';
             document.getElementById('btnRhLogout').style.display = 'none';
             rhStatus('Desconectado.');
         }
@@ -1184,26 +1200,19 @@
         }
 
         function processSEILinks() {
-            if (!appData.seiProcessos || appData.seiProcessos.length === 0) {
-                appData.records.forEach(r => { r['PROCESSOS_SEI'] = []; r['TOTAL_PROCESSOS'] = 0; });
-                return;
-            }
-
-            appData.records.forEach(r => {
-                const nomeServidor = normalizeText(r['NOME SERVIDOR']);
-                const cpfServidor = String(r['CPF'] || '').replace(/\D/g, '');
-                const processosDoServidor = [];
-
-                appData.seiProcessos.forEach(p => {
-                    const interessados = normalizeText(p.interessados);
-                    const interessadosCpf = String(p.interessados || '').replace(/\D/g, '');
-                    const nomeExato = nomeServidor && interessados.split(/\s*[,;]\s*/).some(item => normalizeText(item) === nomeServidor);
-                    const cpfExato = cpfServidor.length >= 9 && interessadosCpf.includes(cpfServidor);
-                    if (nomeExato || cpfExato) processosDoServidor.push(p);
+            appData.records.forEach(function(r) {
+                const nomeServidor=normalizeText(r['NOME SERVIDOR']||r['NOME']||'');
+                const cpfServidor=String(r['CPF']||'').replace(/\D/g,'');
+                const processosDoServidor=(appData.seiProcessos||[]).filter(function(p){
+                    const interessados=normalizeText(p.interessados||'');
+                    const cpfInteressado=String(p.cpf||p.interessados||'').replace(/\D/g,'');
+                    const nomes=interessados.split(/\s*[,;\n]\s*/).map(normalizeText).filter(Boolean);
+                    const nomeExato=nomeServidor && nomes.some(function(nome){return nome===nomeServidor || nome.includes(nomeServidor) || nomeServidor.includes(nome);});
+                    const cpfExato=cpfServidor.length>=9 && cpfInteressado.includes(cpfServidor);
+                    return Boolean(nomeExato||cpfExato);
                 });
-
-                r['PROCESSOS_SEI'] = processosDoServidor;
-                r['TOTAL_PROCESSOS'] = processosDoServidor.length;
+                r['PROCESSOS_SEI']=processosDoServidor;
+                r['TOTAL_PROCESSOS']=processosDoServidor.length;
             });
         }
 
@@ -2038,5 +2047,5 @@
             }
         };
     </script>
-</body>
+</body>1107
 </html>
