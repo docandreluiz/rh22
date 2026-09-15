@@ -48,7 +48,6 @@ export async function testConnection(token: string | null) { const table = await
 export async function updateFields(params: { tabName: GedepTab; rowNumber: number; fields: Record<string, string>; allowedFields: string[]; token: string | null }): Promise<UpdateResult> {
   if (!params.rowNumber || !params.allowedFields.length) throw new Error("A atualização precisa de uma linha e campos autorizados.");
   if (!params.token) throw new Error("Faça login com o Google antes de gravar.");
-  if (params.tabName !== "servidores") throw new Error("A edição está liberada somente para a aba servidores nesta fase.");
   if (Object.keys(params.fields).some((field) => normalize(field) === normalize("idServidor"))) throw new Error("O idServidor é permanente e não pode ser alterado.");
   const table = await readTable(params.tabName, params.token);
   const unauthorized = Object.keys(params.fields).filter((field) => !params.allowedFields.some((allowed) => normalize(allowed) === normalize(field)));
@@ -67,6 +66,41 @@ export async function appendRows(tabName: GedepTab, rows: Array<Record<string, s
   if (!values.length) return null;
   const api = await prepare(token);
   return api.client.sheets.spreadsheets.values.append({ spreadsheetId: GEDEP_CONFIG.spreadsheetId, range: `${tabName}!A:${columnName(Math.max(table.headers.length - 1, 0))}`, valueInputOption: "USER_ENTERED", insertDataOption: "INSERT_ROWS", resource: { values } });
+}
+
+export async function appendRowsBatched(tabName: GedepTab, rows: Array<Record<string, string>>, token: string | null, batchSize = 50) {
+  const results = [];
+  for (let index = 0; index < rows.length; index += batchSize) {
+    results.push(await appendRows(tabName, rows.slice(index, index + batchSize), token));
+  }
+  return results;
+}
+
+export async function upsertRowsBatched(tabName: GedepTab, rows: Array<Record<string, string>>, token: string | null, batchSize = 50) {
+  if (!token) throw new Error("Faça login com o Google antes de gravar.");
+  const table = await readTable(tabName, token);
+  const idHeader = table.headers.find((header) => normalize(header) === normalize("idServidor"));
+  if (!idHeader) throw new Error(`A aba ${tabName} não possui a coluna idServidor.`);
+  const idInput = (row: Record<string, string>) => Object.keys(row).find((key) => normalize(key) === normalize("idServidor") || normalize(key) === normalize("id") || normalize(key) === normalize("matricula"));
+  const existing = new Map(table.rows.map((row) => [String(row[idHeader] ?? "").trim(), row]));
+  const inserts: Array<Record<string, string>> = [];
+  const updates: Array<{ range: string; values: string[][] }> = [];
+  for (const row of rows) {
+    const id = String(row[idInput(row) ?? ""] ?? "").trim();
+    if (!id) continue;
+    const target = existing.get(id);
+    if (!target) {
+      const insert: Record<string, string> = {};
+      table.headers.forEach((header) => { const input = Object.keys(row).find((key) => normalize(key) === normalize(header) || (normalize(header) === normalize("idServidor") && normalize(key) === normalize("id"))); insert[header] = input ? String(row[input] ?? "") : ""; });
+      inserts.push(insert);
+    } else {
+      Object.entries(row).forEach(([field, value]) => { const column = table.headers.findIndex((header) => normalize(header) === normalize(field) || (normalize(header) === normalize("idServidor") && [normalize("id"), normalize("matricula")].includes(normalize(field)))); if (column >= 0 && normalize(table.headers[column]) !== normalize("idServidor")) updates.push({ range: `${tabName}!${columnName(column)}${target.__row}`, values: [[String(value ?? "")]] }); });
+    }
+  }
+  const api = await prepare(token);
+  for (let index = 0; index < updates.length; index += batchSize) await api.client.sheets.spreadsheets.values.batchUpdate({ spreadsheetId: GEDEP_CONFIG.spreadsheetId, resource: { valueInputOption: "USER_ENTERED", data: updates.slice(index, index + batchSize) } });
+  await appendRowsBatched(tabName, inserts, token, batchSize);
+  return { updated: rows.length - inserts.length, inserted: inserts.length };
 }
 
 export function writeAudit(entry: AuditEntry, token: string | null) { return appendRows("auditoria", [{ idAuditoria: `aud_${Date.now()}`, dataHora: new Date().toISOString(), usuario: "", modulo: entry.modulo, acao: entry.acao, entidade: entry.entidade, idRegistro: entry.idRegistro ?? "", resumo: entry.resumo, antes: JSON.stringify(entry.antes ?? ""), depois: JSON.stringify(entry.depois ?? "") }], token); }
